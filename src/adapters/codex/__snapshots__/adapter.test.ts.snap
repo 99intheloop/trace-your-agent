@@ -1,0 +1,273 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parse — single thread (phase A) > normalizes session/turn/tool/approx-LLM spans with usage backfill 1`] = `
+[
+  {
+    "attributes": {
+      "agent.id": "11111111-1111-4111-8111-111111111111",
+      "codex.cliVersion": "0.55.0",
+      "codex.originator": "codex_cli_rs",
+      "codex.threadSource": "cli",
+      "gen_ai.provider.name": "openai",
+      "incomplete": true,
+      "session.id": "11111111-1111-4111-8111-111111111111",
+      "source": "codex",
+    },
+    "children": [
+      {
+        "attributes": {
+          "agent.id": "11111111-1111-4111-8111-111111111111",
+          "session.id": "11111111-1111-4111-8111-111111111111",
+          "source": "codex",
+        },
+        "children": [
+          {
+            "attributes": {
+              "agent.id": "11111111-1111-4111-8111-111111111111",
+              "approx": true,
+              "gen_ai.request.model": "gpt-5.1-codex",
+              "session.id": "11111111-1111-4111-8111-111111111111",
+              "source": "codex",
+            },
+            "children": [
+              {
+                "attributes": {
+                  "agent.id": "11111111-1111-4111-8111-111111111111",
+                  "session.id": "11111111-1111-4111-8111-111111111111",
+                  "source": "codex",
+                },
+                "children": [],
+                "durationMs": 600,
+                "inputSummary": "{"cmd":"npm test"}",
+                "kind": "TOOL_CALL",
+                "name": "tool:exec_command",
+                "outputSummary": "3 passed, 0 failed",
+                "status": "ok",
+                "toolName": "exec_command",
+              },
+            ],
+            "durationMs": 150,
+            "inputSummary": "thinking about the fix",
+            "kind": "LLM_CALL",
+            "name": "llm:gpt-5.1-codex",
+            "status": "ok",
+            "tokenUsage": {
+              "cacheReadTokens": 300,
+              "inputTokens": 1200,
+              "outputTokens": 80,
+            },
+          },
+          {
+            "attributes": {
+              "agent.id": "11111111-1111-4111-8111-111111111111",
+              "approx": true,
+              "gen_ai.request.model": "gpt-5.1-codex",
+              "session.id": "11111111-1111-4111-8111-111111111111",
+              "source": "codex",
+            },
+            "children": [],
+            "durationMs": 50,
+            "kind": "LLM_CALL",
+            "name": "llm:gpt-5.1-codex",
+            "outputSummary": "tests are green now",
+            "status": "ok",
+            "tokenUsage": {
+              "cacheReadTokens": 300,
+              "inputTokens": 1500,
+              "outputTokens": 40,
+            },
+          },
+        ],
+        "durationMs": 1000,
+        "kind": "AGENT_TURN",
+        "name": "turn 1",
+        "outputSummary": "tests are green now",
+        "status": "ok",
+        "tokenUsage": {
+          "cacheReadTokens": 600,
+          "inputTokens": 2700,
+          "outputTokens": 120,
+        },
+      },
+    ],
+    "durationMs": 1100,
+    "kind": "SESSION",
+    "name": "codex:11111111",
+    "status": "ok",
+  },
+]
+`;
+
+exports[`parse — thread tree (phase B) > structural join: collab_agent_spawn_end names the child thread 1`] = `
+[
+  {
+    "attributes": {
+      "agent.id": "11111111-1111-4111-8111-111111111111",
+      "codex.cliVersion": "0.55.0",
+      "codex.originator": "codex_cli_rs",
+      "codex.threadSource": "cli",
+      "gen_ai.provider.name": "openai",
+      "incomplete": true,
+      "session.id": "11111111-1111-4111-8111-111111111111",
+      "source": "codex",
+    },
+    "children": [
+      {
+        "attributes": {
+          "agent.id": "11111111-1111-4111-8111-111111111111",
+          "session.id": "11111111-1111-4111-8111-111111111111",
+          "source": "codex",
+        },
+        "children": [
+          {
+            "attributes": {
+              "agent.id": "11111111-1111-4111-8111-111111111111",
+              "approx": true,
+              "gen_ai.request.model": "gpt-5.1-codex",
+              "session.id": "11111111-1111-4111-8111-111111111111",
+              "source": "codex",
+            },
+            "children": [
+              {
+                "attributes": {
+                  "agent.id": "11111111-1111-4111-8111-111111111111",
+                  "agent.spawn": true,
+                  "agent.spawn.childAgentId": "22222222-2222-4222-8222-222222222222",
+                  "agent.spawn.nickname": "Newton",
+                  "session.id": "11111111-1111-4111-8111-111111111111",
+                  "source": "codex",
+                },
+                "children": [
+                  {
+                    "attributes": {
+                      "agent.depth": 1,
+                      "agent.id": "22222222-2222-4222-8222-222222222222",
+                      "agent.parent.id": "11111111-1111-4111-8111-111111111111",
+                      "agent.role": "worker",
+                      "codex.cliVersion": "0.55.0",
+                      "codex.originator": "codex_cli_rs",
+                      "codex.threadSource": "subagent_thread_spawn",
+                      "gen_ai.provider.name": "openai",
+                      "incomplete": true,
+                      "joinQuality": "structural",
+                      "session.id": "11111111-1111-4111-8111-111111111111",
+                      "source": "codex",
+                    },
+                    "children": [
+                      {
+                        "attributes": {
+                          "agent.id": "22222222-2222-4222-8222-222222222222",
+                          "session.id": "11111111-1111-4111-8111-111111111111",
+                          "source": "codex",
+                        },
+                        "children": [
+                          {
+                            "attributes": {
+                              "agent.id": "22222222-2222-4222-8222-222222222222",
+                              "approx": true,
+                              "gen_ai.request.model": "gpt-5.1-codex",
+                              "session.id": "11111111-1111-4111-8111-111111111111",
+                              "source": "codex",
+                            },
+                            "children": [
+                              {
+                                "attributes": {
+                                  "agent.id": "22222222-2222-4222-8222-222222222222",
+                                  "session.id": "11111111-1111-4111-8111-111111111111",
+                                  "source": "codex",
+                                },
+                                "children": [],
+                                "durationMs": 200,
+                                "inputSummary": "{"cmd":"ls"}",
+                                "kind": "TOOL_CALL",
+                                "name": "tool:exec_command",
+                                "outputSummary": "file.txt",
+                                "status": "ok",
+                                "toolName": "exec_command",
+                              },
+                            ],
+                            "durationMs": 250,
+                            "inputSummary": "working the subtask",
+                            "kind": "LLM_CALL",
+                            "name": "llm:gpt-5.1-codex",
+                            "status": "ok",
+                          },
+                        ],
+                        "durationMs": 400,
+                        "kind": "AGENT_TURN",
+                        "name": "turn 1",
+                        "outputSummary": "subtask complete",
+                        "status": "ok",
+                        "tokenUsage": {
+                          "cacheReadTokens": 0,
+                          "inputTokens": 500,
+                          "outputTokens": 20,
+                        },
+                      },
+                    ],
+                    "durationMs": 5200,
+                    "kind": "SESSION",
+                    "name": "codex:Newton",
+                    "status": "ok",
+                  },
+                ],
+                "durationMs": 600,
+                "inputSummary": "do the subtask, Newton",
+                "kind": "TOOL_CALL",
+                "name": "tool:spawn_agent",
+                "outputSummary": "{"agent_id":"22222222-2222-4222-8222-222222222222","nickname":"Newton"}",
+                "status": "ok",
+                "toolName": "spawn_agent",
+              },
+            ],
+            "durationMs": 650,
+            "inputSummary": "should delegate",
+            "kind": "LLM_CALL",
+            "name": "llm:gpt-5.1-codex",
+            "status": "ok",
+          },
+          {
+            "attributes": {
+              "agent.id": "11111111-1111-4111-8111-111111111111",
+              "approx": true,
+              "gen_ai.request.model": "gpt-5.1-codex",
+              "session.id": "11111111-1111-4111-8111-111111111111",
+              "source": "codex",
+            },
+            "children": [
+              {
+                "attributes": {
+                  "agent.id": "11111111-1111-4111-8111-111111111111",
+                  "session.id": "11111111-1111-4111-8111-111111111111",
+                  "source": "codex",
+                },
+                "children": [],
+                "durationMs": 4100,
+                "inputSummary": "{"targets":["22222222-2222-4222-8222-222222222222"],"timeout_ms":1000}",
+                "kind": "TOOL_CALL",
+                "name": "tool:wait_agent",
+                "outputSummary": "{"status":{"22222222-2222-4222-8222-222222222222":"completed"},"timed_out":false}",
+                "status": "ok",
+                "toolName": "wait_agent",
+              },
+            ],
+            "durationMs": 4100,
+            "kind": "LLM_CALL",
+            "name": "llm:gpt-5.1-codex",
+            "status": "ok",
+          },
+        ],
+        "durationMs": 5100,
+        "kind": "AGENT_TURN",
+        "name": "turn 1",
+        "outputSummary": "subtask done, results merged",
+        "status": "ok",
+      },
+    ],
+    "durationMs": 5200,
+    "kind": "SESSION",
+    "name": "codex:11111111",
+    "status": "ok",
+  },
+]
+`;

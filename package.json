@@ -1,0 +1,50 @@
+{
+  "name": "trace-your-agent",
+  "version": "0.1.0",
+  "description": "Local-first AI agent trace platform: reads Claude Code / Codex / Kimi Code session logs from your machine, normalizes them into span trees, and serves a local web UI. Fully local, zero telemetry, strictly read-only on agent home directories.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "tya": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && vite build",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build:ui": "vite build",
+    "dev:ui": "vite"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.9",
+    "better-sqlite3": "^12.2.0",
+    "hono": "^4.12.31",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
+  }
+}
