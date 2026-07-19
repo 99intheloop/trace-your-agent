@@ -192,7 +192,7 @@ export function SessionDetailPage({
             {sessionId}
           </code>
           {summary?.source ? (
-            <span style={{ fontSize: 12, color: 'var(--color-fg-muted)', fontFamily: 'var(--font-mono)' }}>
+            <span className={`src-badge ${srcBadgeClass(summary.source) ?? ''}`}>
               {summary.source}
             </span>
           ) : null}
@@ -361,4 +361,12 @@ export function SessionDetailPage({
       )}
     </div>
   );
+}
+
+/** 平台徽章配色类(详情页头部)。 */
+function srcBadgeClass(source: string): string | undefined {
+  if (source === 'claude-code') return 'src-cc';
+  if (source === 'kimi-code') return 'src-kimi';
+  if (source === 'codex') return 'src-codex';
+  return undefined;
 }

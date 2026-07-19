@@ -7,16 +7,26 @@ export function StatCard({
   value,
   sub,
   accent,
+  tone,
 }: {
   label: string;
   value: string;
   sub?: string | undefined;
   accent?: string | undefined;
+  /** 微着色:卡片背景 tone 8% 透明 + value 同色(界面框架色,不动数据色) */
+  tone?: string | undefined;
 }) {
   return (
     <div
       className="card"
-      style={{ padding: 'var(--spacing-3) var(--spacing-4)', position: 'relative', overflow: 'hidden' }}
+      style={{
+        padding: 'var(--spacing-3) var(--spacing-4)',
+        position: 'relative',
+        overflow: 'hidden',
+        ...(tone !== undefined
+          ? { background: `color-mix(in srgb, ${tone} 8%, var(--color-bg-card))` }
+          : {}),
+      }}
     >
       {accent ? (
         <span
@@ -45,7 +55,7 @@ export function StatCard({
         style={{
           fontSize: '22px',
           fontWeight: 600,
-          color: 'var(--color-fg-strong)',
+          color: tone ?? 'var(--color-fg-strong)',
           lineHeight: 1.2,
         }}
       >

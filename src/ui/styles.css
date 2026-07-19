@@ -38,6 +38,12 @@
   --color-accent:        #3b82f6;
   --color-accent-hover:  #2563eb;
 
+  /* ── Platform palette(界面框架色,非数据语义色)── */
+  --color-platform-cc:    #f59e0b;  /* Claude Code 琥珀橙 */
+  --color-platform-kimi:  #6366f1;  /* Kimi Code 靛紫 */
+  --color-platform-codex: #22c55e;  /* Codex 青绿 */
+  --color-platform-all:   #94a3b8;  /* All 中性石板 */
+
   /* ── Spacing scale ── */
   --spacing-1: 0.25rem;
   --spacing-2: 0.5rem;
@@ -122,6 +128,44 @@ body {
 }
 .tab:hover { color: var(--color-fg-default); }
 .tab-active { color: var(--color-fg-strong); border-bottom-color: var(--color-accent); }
+
+/* 平台 tab:active = 专属色 14% 透明背景 + 同色下划线(hover 8% 由 .tab:hover 提供) */
+.tab-cc.tab-active {
+  color: var(--color-platform-cc);
+  border-bottom-color: var(--color-platform-cc);
+  background: color-mix(in srgb, var(--color-platform-cc) 14%, transparent);
+}
+.tab-kimi.tab-active {
+  color: var(--color-platform-kimi);
+  border-bottom-color: var(--color-platform-kimi);
+  background: color-mix(in srgb, var(--color-platform-kimi) 14%, transparent);
+}
+.tab-codex.tab-active {
+  color: var(--color-platform-codex);
+  border-bottom-color: var(--color-platform-codex);
+  background: color-mix(in srgb, var(--color-platform-codex) 14%, transparent);
+}
+.tab-all.tab-active {
+  color: var(--color-fg-strong);
+  border-bottom-color: var(--color-platform-all);
+  background: color-mix(in srgb, var(--color-platform-all) 14%, transparent);
+}
+
+/* 平台 source 文字色(表格 source 列) */
+.src-cc { color: var(--color-platform-cc); }
+.src-kimi { color: var(--color-platform-kimi); }
+.src-codex { color: var(--color-platform-codex); }
+
+/* 平台徽章(详情页头部) */
+.src-badge {
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+.src-badge.src-cc { color: var(--color-platform-cc); background: color-mix(in srgb, var(--color-platform-cc) 14%, transparent); }
+.src-badge.src-kimi { color: var(--color-platform-kimi); background: color-mix(in srgb, var(--color-platform-kimi) 14%, transparent); }
+.src-badge.src-codex { color: var(--color-platform-codex); background: color-mix(in srgb, var(--color-platform-codex) 14%, transparent); }
 
 /* Cascade / filter dropdown items */
 .cascade-item {

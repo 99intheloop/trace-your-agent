@@ -21,10 +21,10 @@ import { FilterSelect } from '../components/filter-select.jsx';
 
 const LIMIT = 50;
 const SOURCE_TABS = [
-  { key: 'all', label: 'All' },
-  { key: 'claude-code', label: 'Claude Code' },
-  { key: 'kimi-code', label: 'Kimi Code' },
-  { key: 'codex', label: 'Codex' },
+  { key: 'all', label: 'All', cls: 'tab-all', color: 'var(--color-platform-all)' },
+  { key: 'claude-code', label: 'Claude Code', cls: 'tab-cc', color: 'var(--color-platform-cc)' },
+  { key: 'kimi-code', label: 'Kimi Code', cls: 'tab-kimi', color: 'var(--color-platform-kimi)' },
+  { key: 'codex', label: 'Codex', cls: 'tab-codex', color: 'var(--color-platform-codex)' },
 ] as const;
 type SourceTab = (typeof SOURCE_TABS)[number]['key'];
 
@@ -177,11 +177,12 @@ export function SessionsPage() {
       >
         {SOURCE_TABS.map((t) => {
           const count = counts[t.key];
+          const active = source === t.key;
           return (
             <button
               key={t.key}
               type="button"
-              className={`tab${source === t.key ? ' tab-active' : ''}`}
+              className={`tab ${t.cls}${active ? ' tab-active' : ''}`}
               style={{ fontSize: 13, padding: '8px 14px' }}
               onClick={() => {
                 setSource(t.key);
@@ -196,9 +197,8 @@ export function SessionsPage() {
                     fontSize: 10,
                     padding: '1px 6px',
                     borderRadius: 8,
-                    background:
-                      source === t.key ? 'var(--color-accent)' : 'var(--color-bg-card, #1a1d27)',
-                    color: source === t.key ? '#fff' : 'var(--color-fg-faint)',
+                    background: active ? t.color : 'var(--color-bg-card, #1a1d27)',
+                    color: active ? '#fff' : 'var(--color-fg-faint)',
                   }}
                 >
                   {count}
@@ -276,16 +276,19 @@ export function SessionsPage() {
           label="Spans"
           value={fmtTokens(agg.spans)}
           sub={partial ? '当前页统计' : undefined}
+          tone="var(--color-kind-llm)"
         />
         <StatCard
           label="Tokens"
           value={fmtTokens(agg.input + agg.output)}
           sub={`↑${fmtTokens(agg.input)} ↓${fmtTokens(agg.output)}${partial ? ' · 当前页统计' : ''}`}
+          tone="var(--color-kind-agent)"
         />
         <StatCard
           label="Cost"
           value={fmtCost(agg.cost)}
           sub={`errors ${agg.errors}${partial ? ' · 当前页统计' : ''}`}
+          tone="var(--color-kind-tool)"
         />
       </div>
       {partial ? (
@@ -384,7 +387,10 @@ function SessionRow({ s }: { s: SessionSummary }) {
         </span>
       </td>
       <td>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--color-fg-muted)' }}>
+        <span
+          className={srcClass(s.source)}
+          style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 500 }}
+        >
           {s.source}
         </span>
       </td>
@@ -440,6 +446,13 @@ function SessionRow({ s }: { s: SessionSummary }) {
       </td>
     </tr>
   );
+}
+
+function srcClass(source: string): string | undefined {
+  if (source === 'claude-code') return 'src-cc';
+  if (source === 'kimi-code') return 'src-kimi';
+  if (source === 'codex') return 'src-codex';
+  return undefined;
 }
 
 function StateBox({ text, tone }: { text: string; tone?: 'error' | undefined }) {
