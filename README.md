@@ -23,9 +23,13 @@
 
 ![search filter](docs/screenshots/04-search-filter.png)
 
-**span 树详情** — 可折叠 span 树（后台子代理 ⏚、中断 ⚠、启发式挂载虚线框），点节点看参数/结果/延迟事件/token:
+**span 树详情** — turn 展开即每步模型调用（LLM）与工具执行（TOOL)，子代理（Agent）下嵌套子树：
 
-![session detail](docs/screenshots/05-session-detail.png)
+![span tree turns](docs/screenshots/06-span-tree-turns.png)
+
+点击任意节点，看完整的输入/输出/耗时/属性/事件；后台子代理 ⏚、中断 ⚠、启发式挂载虚线框：
+
+![turn detail](docs/screenshots/07-turn-detail.png)
 
 更多细节：父子挂载按证据强度标 `structural / semi / heuristic`，挂不上就是孤儿，绝不编造；中断会话标 `incomplete`;LLM 时长为推算值时标 `approx`。
 
