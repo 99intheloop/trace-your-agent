@@ -11,7 +11,7 @@
 
 ![sessions](docs/screenshots/01-sessions.png)
 
-**目录级联过滤** — cwd 多级展开，按目录（项目）筛会话，每级带计数；另有时间范围与错误三态：
+**目录级联过滤** — 除会话级聚合外，还支持业务仓库（cwd）级聚合：多级展开、每级带计数；另有时间范围与错误三态：
 
 ![cwd cascade](docs/screenshots/02-cwd-cascade.png)
 

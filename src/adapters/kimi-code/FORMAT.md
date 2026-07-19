@@ -1,6 +1,6 @@
 # kimi-code 磁盘格式纪要(适配器实现依据)
 
-本文记录 kimi-code 两代引擎的本地会话格式,供适配器维护者参考。所有结论都有源码依据(path:line,仓库:/Users/zyan/references/kimi-code 或公开仓库 moonshot-ai/kimi-code 对应路径)。
+本文记录 kimi-code 两代引擎的本地会话格式,供适配器维护者参考。所有结论都有源码依据(path:line,路径相对公开仓库 moonshot-ai/kimi-code 的 repo 根)。
 
 ## §1 会话目录布局
 
