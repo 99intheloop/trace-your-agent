@@ -16,6 +16,7 @@ import { traceWindow } from '../lib/tree.js';
 import { ATTR, attrString } from '../lib/types.js';
 import type { SessionSummary, SpansResponse } from '../lib/types.js';
 import { navigate } from '../router.jsx';
+import { LAST_URL_KEY } from './sessions.jsx';
 import { SpanDetail } from '../components/span-detail.jsx';
 import { SpanTree } from '../components/span-tree.jsx';
 import { StatCard } from '../components/stat-card.jsx';
@@ -173,7 +174,16 @@ export function SessionDetailPage({
           <button
             type="button"
             className="btn"
-            onClick={() => navigate('/sessions')}
+            onClick={() => {
+              // 返回离开时的同步 URL(过滤状态不丢);直接打开详情页则回列表
+              let last = '/sessions';
+              try {
+                last = sessionStorage.getItem(LAST_URL_KEY) ?? '/sessions';
+              } catch {
+                /* private mode */
+              }
+              navigate(last);
+            }}
             style={{ alignSelf: 'center' }}
           >
             ← sessions

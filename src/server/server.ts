@@ -35,6 +35,8 @@ interface SessionSummary {
   totalCostUsd: number;
   errorCount: number;
   joinQualityStats: Record<string, number>;
+  /** spanQ 过滤时:该 session 的 FTS 命中 span 数。 */
+  spanHits?: number;
 }
 
 /** SearchHit per docs/api.md. */
@@ -45,6 +47,12 @@ interface SearchHit {
   name: string;
   toolName?: string;
   snippet: string;
+  /** 首个命中的字段(驱动 UI 的 in/out/name 徽章)。 */
+  matchedField?: 'input' | 'output' | 'name';
+  /** 所属 session 的 cwd(下拉展示项目名用)。 */
+  cwd?: string;
+  /** 平台(claude-code/codex/kimi-code,驱动 UI 平台徽章)。 */
+  source?: string;
   startTimeMs: number;
 }
 
@@ -73,7 +81,8 @@ export interface RunningServer {
 export const DEFAULT_PORT = 4777;
 const DEFAULT_MAX_ATTEMPTS = 10;
 const VALID_SOURCES: readonly Source[] = ['claude-code', 'codex', 'kimi-code'];
-const SNIPPET_MAX_CHARS = 200;
+/** 下拉 snippet 固定 20 字符,命中词居中。 */
+const SNIPPET_LEN = 20;
 
 const UI_NOT_BUILT_PAGE = `<!doctype html>
 <html lang="en">
@@ -151,19 +160,23 @@ function makeSnippet(span: Span, query: string): string {
     for (const field of fields) {
       const at = field.toLowerCase().indexOf(needle);
       if (at === -1) continue;
-      const start = Math.max(0, at - 60);
+      // 固定 20 字符窗口,命中词尽量居中(词比窗长则从词头截)
+      const room = Math.max(0, SNIPPET_LEN - token.length);
+      const start = Math.max(0, at - Math.floor(room / 2));
       const prefix = start > 0 ? '…' : '';
-      const body = field.slice(start, start + SNIPPET_MAX_CHARS);
-      const suffix = start + SNIPPET_MAX_CHARS < field.length ? '…' : '';
+      const body = field.slice(start, start + SNIPPET_LEN);
+      const suffix = start + SNIPPET_LEN < field.length ? '…' : '';
       return `${prefix}${body}${suffix}`;
     }
   }
   const fallback = fields[0] ?? '';
-  return fallback.length <= SNIPPET_MAX_CHARS ? fallback : `${fallback.slice(0, SNIPPET_MAX_CHARS)}…`;
+  return fallback.length <= SNIPPET_LEN ? fallback : `${fallback.slice(0, SNIPPET_LEN)}…`;
 }
 
 function toSearchHit(span: Span, query: string): SearchHit {
   const sessionId = span.attributes[ATTR.SESSION_ID];
+  const matchedField = firstMatchedField(span, query);
+  const source = span.attributes[ATTR.SOURCE];
   return {
     spanId: span.spanId,
     sessionId: typeof sessionId === 'string' ? sessionId : '',
@@ -171,8 +184,21 @@ function toSearchHit(span: Span, query: string): SearchHit {
     name: span.name,
     ...(span.toolName !== undefined ? { toolName: span.toolName } : {}),
     snippet: makeSnippet(span, query),
+    ...(matchedField !== undefined ? { matchedField } : {}),
+    ...(typeof source === 'string' ? { source } : {}),
     startTimeMs: span.startTimeMs,
   };
+}
+
+/** Which summary field the query hits first (input → output → name). */
+function firstMatchedField(span: Span, query: string): 'input' | 'output' | 'name' | undefined {
+  const token = query.match(/[\p{L}\p{N}_.-]+/u)?.[0];
+  if (token === undefined) return undefined;
+  const needle = token.toLowerCase();
+  if (span.inputSummary?.toLowerCase().includes(needle)) return 'input';
+  if (span.outputSummary?.toLowerCase().includes(needle)) return 'output';
+  if (span.name.toLowerCase().includes(needle)) return 'name';
+  return undefined;
 }
 
 /** Build the hono app (pure — no listening socket; see {@link startServer}). */
@@ -204,17 +230,27 @@ export function createApp(deps: ServerDeps): Hono {
     if (typeof from === 'string') return c.json({ error: from }, 400);
     const hasErrorRes = parseBoolParam(c.req.query('hasError'), 'hasError');
     if (typeof hasErrorRes === 'string') return c.json({ error: hasErrorRes }, 400);
+    const spanQ = c.req.query('spanQ');
     const filter: ListSessionsFilter = {
       ...(sourceRes.source !== undefined ? { source: sourceRes.source } : {}),
       ...(q !== undefined && q !== '' ? { q } : {}),
       ...(cwd !== undefined && cwd !== '' ? { cwdPrefix: cwd } : {}),
       ...(from > 0 ? { fromMs: from } : {}),
       ...(hasErrorRes !== undefined ? { hasError: hasErrorRes } : {}),
+      ...(spanQ !== undefined && spanQ.trim() !== '' ? { spanQ } : {}),
       limit,
       offset,
     };
     const sessions = store.listSessions(filter).map(toSessionSummary);
     const total = store.countSessions(filter);
+    // spanQ 生效时附每 session 的命中数("N 处命中"徽章)
+    if (spanQ !== undefined && spanQ.trim() !== '') {
+      const hits = store.spanHitCounts(spanQ, sourceRes.source);
+      for (const s of sessions) {
+        const n = hits.get(s.sessionId);
+        if (n !== undefined) s.spanHits = n;
+      }
+    }
     return c.json({ sessions, total });
   });
 
@@ -267,11 +303,36 @@ export function createApp(deps: ServerDeps): Hono {
     const limit = parseIntParam(c.req.query('limit'), 'limit', 100, 1);
     if (typeof limit === 'string') return c.json({ error: limit }, 400);
 
+    // 多拉 10 倍,按 session 去重后截到 limit(每 session 只留一条代表命中)
     const spans = store.searchSpans(q, {
       ...(sourceRes.source !== undefined ? { source: sourceRes.source } : {}),
-      limit,
+      limit: limit * 10,
     });
-    return c.json({ results: spans.map((span) => toSearchHit(span, q)) });
+    const seenSessions = new Set<string>();
+    const deduped: Span[] = [];
+    for (const span of spans) {
+      const sid = span.attributes[ATTR.SESSION_ID];
+      const key = typeof sid === 'string' ? sid : span.spanId;
+      if (seenSessions.has(key)) continue;
+      seenSessions.add(key);
+      deduped.push(span);
+      if (deduped.length >= limit) break;
+    }
+    // 附 session cwd(下拉展示用项目名,替代无意义的 sessionId 前缀)
+    const cwdBySession = new Map<string, string>();
+    for (const span of deduped) {
+      const sid = span.attributes[ATTR.SESSION_ID];
+      if (typeof sid !== 'string' || cwdBySession.has(sid)) continue;
+      const row = store.getSessionRow(sid);
+      if (row?.cwd !== null && row?.cwd !== undefined) cwdBySession.set(sid, row.cwd);
+    }
+    return c.json({
+      results: deduped.map((span) => {
+        const hit = toSearchHit(span, q);
+        const cwd = cwdBySession.get(hit.sessionId);
+        return cwd !== undefined ? { ...hit, cwd } : hit;
+      }),
+    });
   });
 
   app.get('/api/payloads/:ref', (c) => {

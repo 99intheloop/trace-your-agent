@@ -37,6 +37,8 @@ export interface SessionSummary {
   totalCostUsd: number;
   errorCount: number;
   joinQualityStats: Record<string, number>;
+  /** spanQ 过滤时:该 session 的 FTS 命中 span 数。 */
+  spanHits?: number;
 }
 
 /** GET /api/search hit (docs/api.md). */
@@ -47,6 +49,12 @@ export interface SearchHit {
   name: string;
   toolName?: string;
   snippet: string;
+  /** 首个命中的字段(in/out/name 徽章)。 */
+  matchedField?: 'input' | 'output' | 'name';
+  /** 所属 session 的 cwd(展示项目名)。 */
+  cwd?: string;
+  /** 平台徽章(claude-code/codex/kimi-code)。 */
+  source?: string;
   startTimeMs: number;
 }
 

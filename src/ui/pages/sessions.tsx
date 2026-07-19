@@ -51,17 +51,67 @@ function timeRangeToFrom(range: TimeRange): number | undefined {
   return undefined;
 }
 
+// ─── URL 同步:全部过滤状态进 query(replaceState,不污染历史),返回时恢复 ───
+
+export const LAST_URL_KEY = 'tya.lastSessionsUrl';
+const SOURCE_KEYS = SOURCE_TABS.map((t) => t.key) as readonly string[];
+
+interface PageState {
+  source: SourceTab;
+  cwd: string | undefined;
+  time: TimeRange;
+  error: ErrorFilter;
+  spanQ: string;
+  offset: number;
+}
+
+function readUrlState(): PageState {
+  const p = new URLSearchParams(window.location.search);
+  const rawSource = p.get('source') ?? 'all';
+  const rawTime = p.get('time') ?? 'all';
+  const rawError = p.get('error') ?? 'all';
+  const rawOffset = Number(p.get('offset') ?? '0');
+  return {
+    source: (SOURCE_KEYS.includes(rawSource) ? rawSource : 'all') as SourceTab,
+    cwd: p.get('cwd') ?? undefined,
+    time: (TIME_OPTIONS.some((o) => o.value === rawTime) ? rawTime : 'all') as TimeRange,
+    error: (ERROR_OPTIONS.some((o) => o.value === rawError) ? rawError : 'all') as ErrorFilter,
+    spanQ: p.get('spanQ') ?? '',
+    offset: Number.isInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0,
+  };
+}
+
+function writeUrlState(s: PageState): void {
+  const p = new URLSearchParams();
+  if (s.source !== 'all') p.set('source', s.source);
+  if (s.cwd !== undefined) p.set('cwd', s.cwd);
+  if (s.time !== 'all') p.set('time', s.time);
+  if (s.error !== 'all') p.set('error', s.error);
+  if (s.spanQ !== '') p.set('spanQ', s.spanQ);
+  if (s.offset > 0) p.set('offset', String(s.offset));
+  const qs = p.toString();
+  const url = `/sessions${qs === '' ? '' : `?${qs}`}`;
+  window.history.replaceState(null, '', url);
+  try {
+    sessionStorage.setItem(LAST_URL_KEY, url);
+  } catch {
+    /* private mode 等场景下静默 */
+  }
+}
+
 export function SessionsPage() {
-  const [source, setSource] = useState<SourceTab>('all');
-  const [offset, setOffset] = useState(0);
+  const [initial] = useState(readUrlState);
+  const [source, setSource] = useState<SourceTab>(initial.source);
+  const [offset, setOffset] = useState(initial.offset);
   const [data, setData] = useState<SessionsResponse | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // 过滤栏状态
-  const [cwd, setCwd] = useState<string | undefined>(undefined);
-  const [timeRange, setTimeRange] = useState<TimeRange>('all');
-  const [errorFilter, setErrorFilter] = useState<ErrorFilter>('all');
+  const [cwd, setCwd] = useState<string | undefined>(initial.cwd);
+  const [timeRange, setTimeRange] = useState<TimeRange>(initial.time);
+  const [errorFilter, setErrorFilter] = useState<ErrorFilter>(initial.error);
+  const [spanQ, setSpanQ] = useState(initial.spanQ);
   const [cwds, setCwds] = useState<Array<{ cwd: string; count: number }>>([]);
 
   useEffect(() => {
@@ -109,6 +159,7 @@ export function SessionsPage() {
         cwd,
         from: timeRangeToFrom(timeRange),
         hasError: errorFilter === 'all' ? undefined : errorFilter === 'error',
+        spanQ: spanQ === '' ? undefined : spanQ,
       })
       .then((d) => {
         if (!alive) return;
@@ -126,7 +177,12 @@ export function SessionsPage() {
     return () => {
       alive = false;
     };
-  }, [source, offset, cwd, timeRange, errorFilter]);
+  }, [source, offset, cwd, timeRange, errorFilter, spanQ]);
+
+  // URL 同步(replaceState):detail 返回 / 分享链接时状态不丢
+  useEffect(() => {
+    writeUrlState({ source, cwd, time: timeRange, error: errorFilter, spanQ, offset });
+  }, [source, cwd, timeRange, errorFilter, spanQ, offset]);
 
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
   const total = data?.total ?? 0;
@@ -163,7 +219,13 @@ export function SessionsPage() {
         <h1 style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-fg-strong)', margin: 0 }}>
           Sessions
         </h1>
-        <SearchBox source={source} />
+        <SearchBox
+          source={source}
+          onSearch={(q) => {
+            setSpanQ(q);
+            setOffset(0);
+          }}
+        />
       </div>
 
       {/* Platform filter tab bar (counts from /api/sources) */}
@@ -245,7 +307,27 @@ export function SessionsPage() {
             setOffset(0);
           }}
         />
-        {(cwd !== undefined || timeRange !== 'all' || errorFilter !== 'all') && (
+        {spanQ !== '' ? (
+          <span
+            className="btn"
+            style={{ color: 'var(--color-accent)', display: 'inline-flex', alignItems: 'center' }}
+            title="表格已按 span 内容过滤"
+          >
+            内容: {spanQ}
+            <span
+              role="button"
+              tabIndex={-1}
+              style={{ marginLeft: 8, color: 'var(--color-fg-faint)', cursor: 'pointer' }}
+              onClick={() => {
+                setSpanQ('');
+                setOffset(0);
+              }}
+            >
+              ✕
+            </span>
+          </span>
+        ) : null}
+        {(cwd !== undefined || timeRange !== 'all' || errorFilter !== 'all' || spanQ !== '') && (
           <button
             type="button"
             className="btn"
@@ -254,6 +336,7 @@ export function SessionsPage() {
               setCwd(undefined);
               setTimeRange('all');
               setErrorFilter('all');
+              setSpanQ('');
               setOffset(0);
             }}
           >
@@ -385,6 +468,22 @@ function SessionRow({ s }: { s: SessionSummary }) {
         >
           {s.sessionId.length > 16 ? `${s.sessionId.slice(0, 16)}…` : s.sessionId}
         </span>
+        {s.spanHits !== undefined ? (
+          <span
+            title={`${s.spanHits} 处 span 命中`}
+            style={{
+              marginLeft: 6,
+              fontSize: 10,
+              fontFamily: 'var(--font-mono)',
+              padding: '1px 6px',
+              borderRadius: 8,
+              background: 'color-mix(in srgb, var(--color-accent) 18%, transparent)',
+              color: 'var(--color-accent)',
+            }}
+          >
+            {s.spanHits} 命中
+          </span>
+        ) : null}
       </td>
       <td>
         <span

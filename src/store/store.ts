@@ -44,6 +44,8 @@ export interface ListSessionsFilter {
   cwdPrefix?: string;
   /** true: only sessions with errors; false: only sessions without errors. */
   hasError?: boolean;
+  /** Full-text query over spans — only sessions containing a hit span. */
+  spanQ?: string;
   orderBy?: 'started_at' | 'span_count' | 'total_tokens' | 'total_cost';
   order?: 'asc' | 'desc';
   limit?: number;
@@ -369,6 +371,27 @@ export class TraceStore {
     return rows.map((r) => ({ cwd: r.cwd, count: r.n }));
   }
 
+  /** Per-session FTS hit counts (the "N 处命中" badge for spanQ-filtered lists). */
+  spanHitCounts(query: string, source?: Source): Map<string, number> {
+    const ftsQuery = toFtsQuery(query);
+    const map = new Map<string, number>();
+    if (ftsQuery === null) return map;
+    const rows = this.db
+      .prepare(
+        `SELECT sp.session_id AS sid, COUNT(*) AS n
+         FROM spans sp
+         JOIN spans_fts ON spans_fts.span_id = sp.span_id
+         WHERE spans_fts MATCH @q ${source !== undefined ? 'AND sp.source = @source' : ''}
+         GROUP BY sp.session_id`,
+      )
+      .all(source !== undefined ? { q: ftsQuery, source } : { q: ftsQuery }) as Array<{
+      sid: string;
+      n: number;
+    }>;
+    for (const r of rows) map.set(r.sid, r.n);
+    return map;
+  }
+
   /** All spans of a session, by session.id OR traceId, ordered by start time. */
   getSessionSpans(sessionIdOrTraceId: string): Span[] {
     const rows = this.db
@@ -531,6 +554,22 @@ function sessionWhere(filter: ListSessionsFilter): { where: string[]; params: Re
   }
   if (filter.hasError !== undefined) {
     where.push(filter.hasError ? 'error_count > 0' : 'error_count = 0');
+  }
+  if (filter.spanQ !== undefined && filter.spanQ !== '') {
+    const ftsQuery = toFtsQuery(filter.spanQ);
+    if (ftsQuery === null) {
+      // 无可匹配词元(纯符号输入)→ 结果为空,但查询必须合法
+      where.push('1 = 0');
+    } else {
+      where.push(
+        `session_id IN (
+          SELECT sp.session_id FROM spans sp
+          JOIN spans_fts ON spans_fts.span_id = sp.span_id
+          WHERE spans_fts MATCH @spanQ
+        )`,
+      );
+      params.spanQ = ftsQuery;
+    }
   }
   return { where, params };
 }

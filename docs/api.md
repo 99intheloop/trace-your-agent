@@ -10,12 +10,13 @@ Base:`http://127.0.0.1:<port>`(默认 4777)。全部 JSON。错误:`{ "error": "
   - `cwd`(可选):路径前缀过滤——匹配该目录本身或其子目录(boundary-aware)
   - `from`(可选):epoch ms,只返回开始时间 ≥ 该值的 session
   - `hasError`(可选):`1|true` 只看有错误,`0|false` 只看无错误
+  - `spanQ`(可选):span 全文过滤——只返回包含命中 span 的 session(FTS 联查,分页正确);命中时每个 SessionSummary 附 `spanHits`(命中 span 数)
   - → `{ sessions: SessionSummary[], total: number }`
 - `GET /api/cwds?source=` → `{ cwds: Array<{ cwd: string; count: number }> }`(distinct cwd + 计数,按计数降序,驱动级联选择器)
 - `GET /api/sessions/:sessionId` → `SessionSummary`(404 若不存在)
 - `GET /api/sources` → `{ sources: Array<{ source: string; count: number }>, total: number }`(各平台 session 计数,驱动 UI 过滤 tab)
 - `GET /api/sessions/:sessionId/spans` → `{ spans: Span[], links: Link[] }`(span 含 `parentSpanId`;前端自行组树)
-- `GET /api/search?q=&source=&limit=`(q 必填)→ `{ results: SearchHit[] }`,`SearchHit = { spanId, sessionId, kind, name, toolName?, snippet, startTimeMs }`(走 FTS5,snippet 来自 name/inputSummary/outputSummary)
+- `GET /api/search?q=&source=&limit=`(q 必填)→ `{ results: SearchHit[] }`,`SearchHit = { spanId, sessionId, kind, name, toolName?, snippet, matchedField?, cwd?, source?, startTimeMs }`(走 FTS5;**按 session 去重**——每个 session 只返回一条代表命中,内部多拉 10 倍再截 limit;snippet 固定 20 字符以命中词居中;matchedField ∈ input|output|name;cwd 为所属 session 工作目录;source 为平台)
 - `GET /api/payloads/:ref` → payload 原始 JSON(404 若不存在;ref 即 span.payloadRef,不含 `payloads/` 前缀)
 
 ## 类型(与 src/core/types.ts 及 src/store 对齐)
