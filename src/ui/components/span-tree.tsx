@@ -13,13 +13,19 @@
  *       attributes.incomplete === true      → ⚠ badge
  *       attributes.approx === true          → duration prefixed with ~
  *       attributes.joinQuality === 'heuristic' → dashed left mounting edge
- *     (trace-ui's subagent/agent.task rendering has no tya counterpart and
- *      was dropped; the ↳ spawn marker is kept via agent.spawn.childAgentId)
  *   - spans taking part in a Link get a ⇄ badge
  *   - rows carry id={`span-<spanId>`} so the page can scrollIntoView them;
  *     flashSpanId plays a one-shot highlight animation
+ *
+ * 性能(大 session 优化):
+ *   1. 建树索引一次完成:childrenBy Map(parent → sorted children)按 spans
+ *      引用 useMemo,取子代 O(1)——不再每节点 O(n) filter(原 O(n²))。
+ *   2. "廉价容器 + memo 叶子":TreeNode(仅递归与折叠,几乎无成本)照常
+ *      下传 selectedSpanId;真正贵的行 DOM 由 memo 化的 SpanRow 渲染,
+ *      选中/闪烁以 isSelected/flash 布尔传入——一次点击只有新旧两行做
+ *      真实重渲染,其余行只是浅层函数调用。
  */
-import { useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import {
   isApprox,
@@ -29,7 +35,6 @@ import {
   isSpawnSpan,
 } from '../lib/types.js';
 import type { Span } from '../lib/types.js';
-import { childrenOf } from '../lib/tree.js';
 import { kindColorHex, theme } from '../lib/colors.js';
 import { fmtMs, fmtTokens } from '../lib/format.js';
 
@@ -42,6 +47,39 @@ interface SpanTreeProps {
   /** Span ids taking part in at least one Link. */
   linkedIds: ReadonlySet<string>;
   flashSpanId: string | null;
+  /** 强制展开的节点(搜索跳转目标的祖先链;折叠的大 session 也能定位)。 */
+  forceExpandedIds: ReadonlySet<string>;
+}
+
+/** 超过该 span 数时默认折叠到 turn 级(大 session 的 DOM 兜底)。 */
+export const COLLAPSE_TO_TURN_THRESHOLD = 2000;
+
+/** O(n) 一次构建:parent → 按开始时间排序的子代数组;同时算出 roots。 */
+function buildTreeIndex(spans: readonly Span[]): {
+  roots: Span[];
+  childrenBy: ReadonlyMap<string, Span[]>;
+} {
+  const idSet = new Set(spans.map((s) => s.spanId));
+  const childrenBy = new Map<string, Span[]>();
+  const roots: Span[] = [];
+  for (const s of spans) {
+    const parent = s.parentSpanId;
+    if (parent === undefined || !idSet.has(parent)) {
+      roots.push(s);
+      continue;
+    }
+    const kids = childrenBy.get(parent);
+    if (kids === undefined) childrenBy.set(parent, [s]);
+    else kids.push(s);
+  }
+  roots.sort((a, b) => a.startTimeMs - b.startTimeMs);
+  for (const kids of childrenBy.values()) {
+    kids.sort((a, b) => a.startTimeMs - b.startTimeMs);
+  }
+  if (roots.length === 0 && spans.length > 0) {
+    roots.push(spans.reduce((a, b) => (a.startTimeMs < b.startTimeMs ? a : b)));
+  }
+  return { roots, childrenBy };
 }
 
 export function SpanTree({
@@ -51,14 +89,11 @@ export function SpanTree({
   maxDurationMs,
   linkedIds,
   flashSpanId,
+  forceExpandedIds,
 }: SpanTreeProps) {
-  // Roots: no parentSpanId, or parentSpanId not found in set.
-  const idSet = new Set(spans.map((s) => s.spanId));
-  let roots = spans.filter((s) => !s.parentSpanId || !idSet.has(s.parentSpanId));
-  if (roots.length === 0) {
-    roots = [spans.reduce((a, b) => (a.startTimeMs < b.startTimeMs ? a : b))];
-  }
-  roots.sort((a, b) => a.startTimeMs - b.startTimeMs);
+  const { roots, childrenBy } = useMemo(() => buildTreeIndex(spans), [spans]);
+  // 大 session:turn 级默认收起,DOM 从 N 降到 turn 数;小 session 全展开
+  const collapseToTurn = spans.length > COLLAPSE_TO_TURN_THRESHOLD;
 
   return (
     <div
@@ -69,38 +104,121 @@ export function SpanTree({
         <TreeNode
           key={r.spanId}
           span={r}
-          spans={spans}
+          childrenBy={childrenBy}
           depth={0}
           selectedSpanId={selectedSpanId}
+          flashSpanId={flashSpanId}
           onSelectSpan={onSelectSpan}
           maxDurationMs={maxDurationMs}
           linkedIds={linkedIds}
-          flashSpanId={flashSpanId}
+          collapseToTurn={collapseToTurn}
+          forceExpandedIds={forceExpandedIds}
         />
       ))}
     </div>
   );
 }
 
-interface TreeNodeProps extends SpanTreeProps {
+interface TreeNodeProps {
   span: Span;
+  childrenBy: ReadonlyMap<string, Span[]>;
   depth: number;
+  selectedSpanId: string | null;
+  flashSpanId: string | null;
+  onSelectSpan: (spanId: string) => void;
+  maxDurationMs: number;
+  linkedIds: ReadonlySet<string>;
+  collapseToTurn: boolean;
+  forceExpandedIds: ReadonlySet<string>;
 }
 
+/** 容器:折叠状态 + 递归。不 memo——函数体极廉,memo 叶子才划算。 */
 function TreeNode({
   span,
-  spans,
+  childrenBy,
   depth,
   selectedSpanId,
+  flashSpanId,
   onSelectSpan,
   maxDurationMs,
   linkedIds,
-  flashSpanId,
+  collapseToTurn,
+  forceExpandedIds,
 }: TreeNodeProps) {
-  const [expanded, setExpanded] = useState(true);
-  const kids = childrenOf(span.spanId, spans);
+  const [expanded, setExpanded] = useState(
+    () => !(collapseToTurn && span.kind === 'AGENT_TURN'),
+  );
+  const kids = childrenBy.get(span.spanId) ?? [];
   const hasChildren = kids.length > 0;
-  const isSelected = selectedSpanId === span.spanId;
+  // 搜索跳转的祖先链强制展开(优先级高于本地折叠)
+  const isOpen = expanded || forceExpandedIds.has(span.spanId);
+
+  const toggle = useCallback((e: MouseEvent) => {
+    e.stopPropagation();
+    setExpanded((v) => !v);
+  }, []);
+
+  return (
+    <div>
+      <SpanRow
+        span={span}
+        depth={depth}
+        hasChildren={hasChildren}
+        expanded={isOpen}
+        onToggle={toggle}
+        isSelected={selectedSpanId === span.spanId}
+        flash={flashSpanId === span.spanId}
+        onSelectSpan={onSelectSpan}
+        maxDurationMs={maxDurationMs}
+        linked={linkedIds.has(span.spanId)}
+      />
+      {hasChildren && isOpen
+        ? kids.map((c) => (
+            <TreeNode
+              key={c.spanId}
+              span={c}
+              childrenBy={childrenBy}
+              depth={depth + 1}
+              selectedSpanId={selectedSpanId}
+              flashSpanId={flashSpanId}
+              onSelectSpan={onSelectSpan}
+              maxDurationMs={maxDurationMs}
+              linkedIds={linkedIds}
+              collapseToTurn={collapseToTurn}
+              forceExpandedIds={forceExpandedIds}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
+interface SpanRowProps {
+  span: Span;
+  depth: number;
+  hasChildren: boolean;
+  expanded: boolean;
+  onToggle: (e: MouseEvent) => void;
+  isSelected: boolean;
+  flash: boolean;
+  onSelectSpan: (spanId: string) => void;
+  maxDurationMs: number;
+  linked: boolean;
+}
+
+/** 叶子:真实的行 DOM。memo 后一次点击只有新旧两行重渲染。 */
+const SpanRow = memo(function SpanRow({
+  span,
+  depth,
+  hasChildren,
+  expanded,
+  onToggle,
+  isSelected,
+  flash,
+  onSelectSpan,
+  maxDurationMs,
+  linked,
+}: SpanRowProps) {
   const isError = span.status.code === 'error';
   const color = kindColorHex(span.kind);
   const detached = isDetached(span);
@@ -108,12 +226,6 @@ function TreeNode({
   const approx = isApprox(span);
   const heuristic = isHeuristicJoin(span);
   const spawn = isSpawnSpan(span);
-  const linked = linkedIds.has(span.spanId);
-
-  const toggle = useCallback((e: MouseEvent) => {
-    e.stopPropagation();
-    setExpanded((v) => !v);
-  }, []);
 
   // Border composition, by precedence:
   //   selected > detached (dashed outline) > plain; heuristic always wins on
@@ -137,103 +249,131 @@ function TreeNode({
   const barPct = Math.max(2, Math.min(100, (span.durationMs / Math.max(maxDurationMs, 1)) * 100));
 
   return (
-    <div>
-      <div
-        id={`span-${span.spanId}`}
-        className={`span-row${flashSpanId === span.spanId ? ' span-flash' : ''}`}
-        onClick={() => onSelectSpan(span.spanId)}
-        title={
-          heuristic
-            ? 'joinQuality=heuristic: parent attachment guessed from timing/order'
-            : undefined
-        }
+    <div
+      id={`span-${span.spanId}`}
+      className={`span-row${flash ? ' span-flash' : ''}`}
+      onClick={() => onSelectSpan(span.spanId)}
+      title={
+        heuristic
+          ? 'joinQuality=heuristic: parent attachment guessed from timing/order'
+          : undefined
+      }
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        paddingLeft: 6 + depth * 16,
+        paddingRight: 8,
+        height: 26,
+        cursor: 'pointer',
+        backgroundColor: isSelected
+          ? 'color-mix(in srgb, var(--color-kind-agent) 15%, transparent)'
+          : 'transparent',
+        border,
+        borderLeft,
+      }}
+    >
+      {hasChildren ? (
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: 'var(--color-fg-faint)',
+            fontSize: '10px',
+            width: 14,
+            display: 'flex',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+        >
+          {expanded ? '▼' : '▶'}
+        </button>
+      ) : (
+        <span style={{ width: 14, flexShrink: 0 }} />
+      )}
+
+      {/* tya markers: spawn / detached / incomplete */}
+      {spawn ? (
+        <span
+          title="Spawns child agent"
+          style={{ color: 'var(--color-kind-a2a)', flexShrink: 0, fontWeight: 700, fontSize: '11px' }}
+        >
+          ↳
+        </span>
+      ) : null}
+      {detached ? (
+        <span
+          title="detached: background subagent span tree"
+          style={{ color: 'var(--color-fg-muted)', flexShrink: 0, fontWeight: 700, fontSize: '11px' }}
+        >
+          ⏚
+        </span>
+      ) : null}
+      {incomplete ? (
+        <span
+          title="incomplete: closed by end-of-file cleanup, not a real end event"
+          style={{ color: theme.heuristic, flexShrink: 0, fontSize: '11px' }}
+        >
+          ⚠
+        </span>
+      ) : null}
+
+      {/* Kind badge */}
+      <span
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          paddingLeft: 6 + depth * 16,
-          paddingRight: 8,
-          height: 26,
-          cursor: 'pointer',
-          backgroundColor: isSelected
-            ? 'color-mix(in srgb, var(--color-kind-agent) 15%, transparent)'
-            : 'transparent',
-          border,
-          borderLeft,
+          fontSize: '9px',
+          fontWeight: 600,
+          padding: '1px 5px',
+          borderRadius: 'var(--radius-sm)',
+          backgroundColor: `${color}22`,
+          color,
+          flexShrink: 0,
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
         }}
       >
-        {hasChildren ? (
-          <button
-            type="button"
-            onClick={toggle}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              color: 'var(--color-fg-faint)',
-              fontSize: '10px',
-              width: 14,
-              display: 'flex',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-            aria-label={expanded ? 'Collapse' : 'Expand'}
-          >
-            {expanded ? '▼' : '▶'}
-          </button>
-        ) : (
-          <span style={{ width: 14, flexShrink: 0 }} />
-        )}
+        {span.kind.replace('_CALL', '').replace('_TURN', '').slice(0, 6)}
+      </span>
 
-        {/* tya markers: spawn / detached / incomplete */}
-        {spawn ? (
-          <span
-            title="Spawns child agent"
-            style={{ color: 'var(--color-kind-a2a)', flexShrink: 0, fontWeight: 700, fontSize: '11px' }}
-          >
-            ↳
-          </span>
-        ) : null}
-        {detached ? (
-          <span
-            title="detached: background subagent span tree"
-            style={{ color: 'var(--color-fg-muted)', flexShrink: 0, fontWeight: 700, fontSize: '11px' }}
-          >
-            ⏚
-          </span>
-        ) : null}
-        {incomplete ? (
-          <span
-            title="incomplete: closed by end-of-file cleanup, not a real end event"
-            style={{ color: theme.heuristic, flexShrink: 0, fontSize: '11px' }}
-          >
-            ⚠
-          </span>
-        ) : null}
+      {/* Name */}
+      <span
+        style={{
+          fontSize: '12px',
+          color: 'var(--color-fg-default)',
+          fontFamily: 'var(--font-mono)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          flexShrink: 1,
+          minWidth: 0,
+        }}
+      >
+        {span.name}
+      </span>
 
-        {/* Kind badge */}
+      {/* Kind-specific extras */}
+      {span.kind === 'LLM_CALL' && span.tokenUsage ? (
         <span
           style={{
-            fontSize: '9px',
-            fontWeight: 600,
-            padding: '1px 5px',
-            borderRadius: 'var(--radius-sm)',
-            backgroundColor: `${color}22`,
-            color,
+            fontSize: '10px',
+            color: 'var(--color-fg-faint)',
+            fontFamily: 'var(--font-mono)',
             flexShrink: 0,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
           }}
         >
-          {span.kind.replace('_CALL', '').replace('_TURN', '').slice(0, 6)}
+          ↑{fmtTokens(span.tokenUsage.inputTokens)} ↓{fmtTokens(span.tokenUsage.outputTokens)}
         </span>
-
-        {/* Name */}
+      ) : null}
+      {span.kind === 'TOOL_CALL' ? (
         <span
           style={{
-            fontSize: '12px',
-            color: 'var(--color-fg-default)',
+            fontSize: '10px',
+            color: 'var(--color-fg-faint)',
             fontFamily: 'var(--font-mono)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -241,129 +381,83 @@ function TreeNode({
             flexShrink: 1,
             minWidth: 0,
           }}
+          title={`${span.inputSummary ?? ''} → ${span.outputSummary ?? ''}`}
         >
-          {span.name}
+          {truncate(span.inputSummary, 24)}
+          <span style={{ color: 'var(--color-fg-faint)', margin: '0 4px' }}>→</span>
+          {truncate(span.outputSummary, 24)}
         </span>
+      ) : null}
 
-        {/* Kind-specific extras */}
-        {span.kind === 'LLM_CALL' && span.tokenUsage ? (
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--color-fg-faint)',
-              fontFamily: 'var(--font-mono)',
-              flexShrink: 0,
-            }}
-          >
-            ↑{fmtTokens(span.tokenUsage.inputTokens)} ↓{fmtTokens(span.tokenUsage.outputTokens)}
-          </span>
-        ) : null}
-        {span.kind === 'TOOL_CALL' ? (
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--color-fg-faint)',
-              fontFamily: 'var(--font-mono)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flexShrink: 1,
-              minWidth: 0,
-            }}
-            title={`${span.inputSummary ?? ''} → ${span.outputSummary ?? ''}`}
-          >
-            {truncate(span.inputSummary, 24)}
-            <span style={{ color: 'var(--color-fg-faint)', margin: '0 4px' }}>→</span>
-            {truncate(span.outputSummary, 24)}
-          </span>
-        ) : null}
+      {/* Link participation */}
+      {linked ? (
+        <span
+          title="takes part in a link (NOTIFY/MESSAGE) — see detail panel"
+          style={{ color: 'var(--color-kind-llm)', flexShrink: 0, fontSize: '10px' }}
+        >
+          ⇄
+        </span>
+      ) : null}
 
-        {/* Link participation */}
-        {linked ? (
-          <span
-            title="takes part in a link (NOTIFY/MESSAGE) — see detail panel"
-            style={{ color: 'var(--color-kind-llm)', flexShrink: 0, fontSize: '10px' }}
-          >
-            ⇄
-          </span>
-        ) : null}
-
-        {/* Duration: relative-width bar + text */}
+      {/* Duration: relative-width bar + text */}
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          flexShrink: 0,
+          marginLeft: 'auto',
+        }}
+      >
         <span
           style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            flexShrink: 0,
-            marginLeft: 'auto',
-          }}
-        >
-          <span
-            style={{
-              width: 56,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor: 'var(--color-border-default)',
-              overflow: 'hidden',
-              display: 'inline-block',
-            }}
-          >
-            <span
-              style={{
-                display: 'block',
-                height: '100%',
-                width: `${barPct}%`,
-                backgroundColor: color,
-                opacity: 0.85,
-              }}
-            />
-          </span>
-          <span
-            style={{
-              fontSize: '10px',
-              color: 'var(--color-fg-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}
-            title={approx ? 'duration inferred (approx)' : undefined}
-          >
-            {approx ? '~' : ''}
-            {fmtMs(span.durationMs)}
-          </span>
-        </span>
-
-        {/* Status */}
-        <span
-          style={{
-            fontSize: '9px',
-            padding: '1px 4px',
+            width: 56,
+            height: 4,
             borderRadius: 2,
-            backgroundColor: isError ? `${theme.status.error}22` : `${theme.status.ok}22`,
-            color: isError ? theme.status.error : theme.status.ok,
-            flexShrink: 0,
+            backgroundColor: 'var(--color-border-default)',
+            overflow: 'hidden',
+            display: 'inline-block',
           }}
         >
-          {isError ? 'err' : 'ok'}
+          <span
+            style={{
+              display: 'block',
+              height: '100%',
+              width: `${barPct}%`,
+              backgroundColor: color,
+              opacity: 0.85,
+            }}
+          />
         </span>
-      </div>
+        <span
+          style={{
+            fontSize: '10px',
+            color: 'var(--color-fg-muted)',
+            fontFamily: 'var(--font-mono)',
+          }}
+          title={approx ? 'duration inferred (approx)' : undefined}
+        >
+          {approx ? '~' : ''}
+          {fmtMs(span.durationMs)}
+        </span>
+      </span>
 
-      {hasChildren && expanded
-        ? kids.map((c) => (
-            <TreeNode
-              key={c.spanId}
-              span={c}
-              spans={spans}
-              depth={depth + 1}
-              selectedSpanId={selectedSpanId}
-              onSelectSpan={onSelectSpan}
-              maxDurationMs={maxDurationMs}
-              linkedIds={linkedIds}
-              flashSpanId={flashSpanId}
-            />
-          ))
-        : null}
+      {/* Status */}
+      <span
+        style={{
+          fontSize: '9px',
+          padding: '1px 4px',
+          borderRadius: 2,
+          backgroundColor: isError ? `${theme.status.error}22` : `${theme.status.ok}22`,
+          color: isError ? theme.status.error : theme.status.ok,
+          flexShrink: 0,
+        }}
+      >
+        {isError ? 'err' : 'ok'}
+      </span>
     </div>
   );
-}
+});
 
 function truncate(s: string | undefined, max: number): string {
   if (!s) return '';

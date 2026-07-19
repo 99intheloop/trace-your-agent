@@ -33,6 +33,7 @@ export function SessionDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [selectedSpanId, setSelectedSpanId] = useState<string | null>(null);
   const [flashSpanId, setFlashSpanId] = useState<string | null>(null);
+  const [forceExpandedIds, setForceExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const [panelWidth, setPanelWidth] = useState(460);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -107,6 +108,18 @@ export function SessionDetailPage({
       if (!spansById.has(spanId)) return;
       setSelectedSpanId(spanId);
       setFlashSpanId(spanId);
+      // 折叠的大 session 里目标可能不可见:强制展开目标的祖先链
+      const chain = new Set<string>();
+      let cur = spansById.get(spanId);
+      while (cur !== undefined) {
+        chain.add(cur.spanId);
+        cur = cur.parentSpanId !== undefined ? spansById.get(cur.parentSpanId) : undefined;
+      }
+      setForceExpandedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of chain) next.add(id);
+        return next;
+      });
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setFlashSpanId(null), 1700);
       // Defer so the row is (re)rendered before scrolling.
@@ -333,6 +346,7 @@ export function SessionDetailPage({
                 maxDurationMs={maxDurationMs}
                 linkedIds={linkedIds}
                 flashSpanId={flashSpanId}
+                forceExpandedIds={forceExpandedIds}
               />
             )}
           </div>
