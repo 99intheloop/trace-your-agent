@@ -14,7 +14,9 @@ Base:`http://127.0.0.1:<port>`(默认 4777)。全部 JSON。错误:`{ "error": "
   - `spanQ`(可选):span 全文过滤——只返回包含命中 span 的 session(FTS 联查,分页正确);命中时每个 SessionSummary 附 `spanHits`(命中 span 数)
   - → `{ sessions: SessionSummary[], total: number }`;每个 SessionSummary 附 `buildStatus`
 - `GET /api/cwds?source=` → `{ cwds: Array<{ cwd: string; count: number }> }`(distinct cwd + 计数,按计数降序,驱动级联选择器)
-- `GET /api/sessions/:sessionId` → `SessionSummary`(404 若不存在)
+- `GET /api/sessions/:sessionId` → `SessionSummary`(404 若不存在;含 `buildStatus` 与人工标注字段)
+- `PUT /api/sessions/:sessionId/verdict` — 人工标注(局部更新,`null` 清除)。body:`{ verdict?: 'pass'|'partial'|'fail'|null, taskType?: 'feature'|'fix'|'change'|'ask'|null, note?: string|null }`(note ≤2000 字符)→ 更新后的 `SessionSummary`。标注列由用户写入,re-ingest 重建聚合时保留
+- `GET /api/stats/success?groupBy=source|cwd|taskType|week` → `{ stats: Array<{ key, total, pass, partial, fail }> }`(仅统计已标注 session;week 为 ISO 周,按周升序)
 - `GET /api/sources` → `{ sources: Array<{ source: string; count: number }>, total: number }`(各平台 session 计数,驱动 UI 过滤 tab)
 - `GET /api/sessions/:sessionId/spans` → `{ spans: Span[], links: Link[] }`(span 含 `parentSpanId`;前端自行组树)
 - `GET /api/search?q=&source=&limit=`(q 必填)→ `{ results: SearchHit[] }`,`SearchHit = { spanId, sessionId, kind, name, toolName?, snippet, matchedField?, cwd?, source?, startTimeMs }`(走 FTS5;**按 session 去重**——每个 session 只返回一条代表命中,内部多拉 10 倍再截 limit;snippet 固定 20 字符以命中词居中;matchedField ∈ input|output|name;cwd 为所属 session 工作目录;source 为平台)

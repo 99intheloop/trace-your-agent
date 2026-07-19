@@ -41,6 +41,18 @@ export interface SessionSummary {
   spanHits?: number;
   /** 派生的构建/测试状态。 */
   buildStatus?: 'pass' | 'fail' | 'none';
+  /** 人工标注。 */
+  verdict?: 'pass' | 'partial' | 'fail';
+  taskType?: 'feature' | 'fix' | 'change' | 'ask';
+  note?: string;
+}
+
+export interface SuccessStat {
+  key: string;
+  total: number;
+  pass: number;
+  partial: number;
+  fail: number;
 }
 
 /** GET /api/search hit (docs/api.md). */

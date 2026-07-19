@@ -17,6 +17,7 @@ import { ATTR, attrString } from '../lib/types.js';
 import type { SessionSummary, SpansResponse } from '../lib/types.js';
 import { navigate } from '../router.jsx';
 import { LAST_URL_KEY } from './sessions.jsx';
+import { VerdictEditor } from '../components/verdict-editor.jsx';
 import { SpanDetail } from '../components/span-detail.jsx';
 import { SpanTree } from '../components/span-tree.jsx';
 import { StatCard } from '../components/stat-card.jsx';
@@ -241,6 +242,13 @@ export function SessionDetailPage({
             </span>
           ) : null}
         </div>
+
+        {/* 人工标注(verdict / task_type / note) */}
+        {summary ? (
+          <div style={{ marginBottom: 'var(--spacing-3)' }}>
+            <VerdictEditor summary={summary} onSaved={(next) => setSummary(next)} />
+          </div>
+        ) : null}
 
         <div
           style={{

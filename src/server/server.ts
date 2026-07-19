@@ -39,6 +39,10 @@ interface SessionSummary {
   spanHits?: number;
   /** 派生的构建/测试状态(命令模式 + span 状态,查询时计算)。 */
   buildStatus?: 'pass' | 'fail' | 'none';
+  /** 人工标注。 */
+  verdict?: 'pass' | 'partial' | 'fail';
+  taskType?: 'feature' | 'fix' | 'change' | 'ask';
+  note?: string;
 }
 
 /** SearchHit per docs/api.md. */
@@ -118,6 +122,9 @@ function toSessionSummary(row: SessionRow): SessionSummary {
     totalCostUsd: row.totalCostUsd,
     errorCount: row.errorCount,
     joinQualityStats: row.joinQualityStats,
+    ...(row.verdict !== null ? { verdict: row.verdict } : {}),
+    ...(row.taskType !== null ? { taskType: row.taskType } : {}),
+    ...(row.note !== null ? { note: row.note } : {}),
   };
 }
 
@@ -294,6 +301,61 @@ export function createApp(deps: ServerDeps): Hono {
     const summary = toSessionSummary(row);
     summary.buildStatus = store.buildStatusByIds([summary.sessionId]).get(summary.sessionId) ?? 'none';
     return c.json(summary);
+  });
+
+  /** 人工标注:写入 verdict / taskType / note(局部更新,null 清除)。 */
+  app.put('/api/sessions/:sessionId/verdict', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    if (store.getSessionRow(sessionId) === undefined) {
+      return c.json({ error: 'session not found' }, 404);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    if (body === null || typeof body !== 'object') {
+      return c.json({ error: 'body must be an object' }, 400);
+    }
+    const b = body as Record<string, unknown>;
+    const VERDICTS = ['pass', 'partial', 'fail'];
+    const TASK_TYPES = ['feature', 'fix', 'change', 'ask'];
+    const patch: Parameters<typeof store.setVerdict>[1] = {};
+    if ('verdict' in b) {
+      if (b.verdict !== null && !VERDICTS.includes(b.verdict as string)) {
+        return c.json({ error: `verdict must be ${VERDICTS.join('|')}|null` }, 400);
+      }
+      patch.verdict = b.verdict as SessionRow['verdict'];
+    }
+    if ('taskType' in b) {
+      if (b.taskType !== null && !TASK_TYPES.includes(b.taskType as string)) {
+        return c.json({ error: `taskType must be ${TASK_TYPES.join('|')}|null` }, 400);
+      }
+      patch.taskType = b.taskType as SessionRow['taskType'];
+    }
+    if ('note' in b) {
+      if (b.note !== null && typeof b.note !== 'string') {
+        return c.json({ error: 'note must be a string|null' }, 400);
+      }
+      patch.note = (b.note as string | null)?.slice(0, 2000) ?? null;
+    }
+    if (Object.keys(patch).length === 0) {
+      return c.json({ error: 'nothing to update (verdict|taskType|note expected)' }, 400);
+    }
+    store.setVerdict(sessionId, patch);
+    const row = store.getSessionRow(sessionId);
+    if (row === undefined) return c.json({ error: 'session not found' }, 404);
+    return c.json(toSessionSummary(row));
+  });
+
+  /** 成功率聚合(仅统计已标注 session)。 */
+  app.get('/api/stats/success', (c) => {
+    const groupBy = c.req.query('groupBy') ?? 'source';
+    if (!['source', 'cwd', 'taskType', 'week'].includes(groupBy)) {
+      return c.json({ error: 'groupBy must be source|cwd|taskType|week' }, 400);
+    }
+    return c.json({ stats: store.successStats(groupBy as 'source' | 'cwd' | 'taskType' | 'week') });
   });
 
   app.get('/api/sessions/:sessionId/spans', (c) => {

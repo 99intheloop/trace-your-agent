@@ -1,6 +1,6 @@
 /**
  * SQLite schema (better-sqlite3). All DDL is idempotent; `store.ts` runs this
- * on open. Single migration step for now — schema_version 1.
+ * on open, then applies MIGRATIONS below PRAGMA user_version.
  */
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS spans (
@@ -56,7 +56,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   total_output_tokens  INTEGER NOT NULL DEFAULT 0,
   total_cost_usd       REAL NOT NULL DEFAULT 0,
   error_count          INTEGER NOT NULL DEFAULT 0,
-  join_quality_stats   TEXT NOT NULL DEFAULT '{}'
+  join_quality_stats   TEXT NOT NULL DEFAULT '{}',
+  verdict              TEXT,
+  task_type            TEXT,
+  note                 TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source, started_at_ms);
 
@@ -70,3 +73,30 @@ CREATE VIRTUAL TABLE IF NOT EXISTS spans_fts USING fts5(
   span_id UNINDEXED
 );
 `;
+
+/**
+ * 增量迁移:SCHEMA_SQL 只覆盖新建库;老库按 PRAGMA user_version 逐版本升级。
+ * v2: sessions + verdict / task_type / note(人工标注层;用户写入的数据,
+ *     recomputeSession 重建聚合时必须保留)。
+ * guard 返回 true 才执行(新建库经 SCHEMA_SQL 已含新列,靠 guard 跳过)。
+ */
+import type { Database } from 'better-sqlite3';
+
+export const MIGRATIONS: ReadonlyArray<{
+  version: number;
+  sql: string;
+  guard?: ((db: Database) => boolean) | undefined;
+}> = [
+  {
+    version: 2,
+    sql: `
+      ALTER TABLE sessions ADD COLUMN verdict TEXT;
+      ALTER TABLE sessions ADD COLUMN task_type TEXT;
+      ALTER TABLE sessions ADD COLUMN note TEXT;
+    `,
+    guard: (db) =>
+      db
+        .prepare(`SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'verdict'`)
+        .get() === undefined,
+  },
+];

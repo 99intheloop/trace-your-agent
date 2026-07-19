@@ -18,6 +18,7 @@ import { SearchBox } from '../components/search-box.jsx';
 import { StatCard } from '../components/stat-card.jsx';
 import { CwdCascader } from '../components/cwd-cascader.jsx';
 import { FilterSelect } from '../components/filter-select.jsx';
+import { SuccessPanel } from '../components/success-panel.jsx';
 
 const LIMIT = 50;
 const SOURCE_TABS = [
@@ -368,6 +369,9 @@ export function SessionsPage() {
           </button>
         )}
       </div>
+
+      {/* 成功率面板(基于人工标注,可折叠) */}
+      <SuccessPanel />
 
       {/* Aggregate cards */}
       <div

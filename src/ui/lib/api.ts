@@ -9,6 +9,7 @@ import type {
   SessionsResponse,
   SourcesResponse,
   SpansResponse,
+  SuccessStat,
 } from './types.js';
 
 async function getJson<T>(path: string): Promise<T> {
@@ -86,5 +87,31 @@ export const api = {
   },
   cwds(source?: string | undefined) {
     return getJson<CwdsResponse>(`/api/cwds${qs({ source })}`);
+  },
+  async setVerdict(
+    sessionId: string,
+    patch: {
+      verdict?: 'pass' | 'partial' | 'fail' | null;
+      taskType?: 'feature' | 'fix' | 'change' | 'ask' | null;
+      note?: string | null;
+    },
+  ): Promise<SessionSummary> {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/verdict`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const body: unknown = await res.json().catch(() => null);
+      const msg =
+        body !== null && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error
+          : `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    return (await res.json()) as SessionSummary;
+  },
+  successStats(groupBy: 'source' | 'cwd' | 'taskType' | 'week') {
+    return getJson<{ stats: SuccessStat[] }>(`/api/stats/success${qs({ groupBy })}`);
   },
 };

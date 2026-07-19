@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { ATTR, type Link, type Source, type Span, type SpanEvent, type SpanKind } from '../core/types.js';
 import { buildCommandSql, reduceBuildStatus, type BuildStatus } from './build-status.js';
 import { estimateCostUsd } from './pricing.js';
-import { SCHEMA_SQL } from './schema.js';
+import { MIGRATIONS, SCHEMA_SQL } from './schema.js';
 
 /**
  * SQLite-backed span store.
@@ -31,6 +31,12 @@ export interface SessionRow {
   totalCostUsd: number;
   errorCount: number;
   joinQualityStats: Record<string, number>;
+  /** 人工标注:任务结果评价。recompute 不触碰(见 upsert 的 ON CONFLICT)。 */
+  verdict: 'pass' | 'partial' | 'fail' | null;
+  /** 人工标注:任务类型。 */
+  taskType: 'feature' | 'fix' | 'change' | 'ask' | null;
+  /** 人工标注:备注。 */
+  note: string | null;
 }
 
 export interface ListSessionsFilter {
@@ -115,6 +121,17 @@ export class TraceStore {
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.db.exec(SCHEMA_SQL);
+    // 增量迁移:老库按 user_version 逐版本升级(新建库经 SCHEMA_SQL 已是 v2,
+    // guard 检测到列已存在会跳过,但 pragma 仍推进到最新)
+    const row = this.db.pragma('user_version', { simple: true }) as number;
+    for (const m of MIGRATIONS) {
+      if (row < m.version) {
+        if (m.guard === undefined || m.guard(this.db)) {
+          this.db.exec(m.sql);
+        }
+        this.db.pragma(`user_version = ${m.version}`);
+      }
+    }
   }
 
   close(): void {
@@ -396,9 +413,78 @@ export class TraceStore {
   }
 
   /**
-   * 派生每个 session 的构建/测试状态(捷径版:命令模式 + 现有 span 状态)。
-   * 返回 Map<sessionId, 'pass'|'fail'>;不在 Map 里的 session 即 'none'。
+   * 人工标注:写入 verdict / taskType / note(局部更新,传 undefined 的字段不动,
+   * 传 null 清除)。这些列由用户写入,recomputeSession 重建聚合时不会触碰。
    */
+  setVerdict(
+    sessionId: string,
+    patch: {
+      verdict?: 'pass' | 'partial' | 'fail' | null;
+      taskType?: 'feature' | 'fix' | 'change' | 'ask' | null;
+      note?: string | null;
+    },
+  ): boolean {
+    const sets: string[] = [];
+    const params: Record<string, unknown> = { sid: sessionId };
+    if (patch.verdict !== undefined) {
+      sets.push('verdict = @verdict');
+      params.verdict = patch.verdict;
+    }
+    if (patch.taskType !== undefined) {
+      sets.push('task_type = @taskType');
+      params.taskType = patch.taskType;
+    }
+    if (patch.note !== undefined) {
+      sets.push('note = @note');
+      params.note = patch.note;
+    }
+    if (sets.length === 0) return false;
+    const result = this.db
+      .prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE session_id = @sid`)
+      .run(params);
+    return result.changes > 0;
+  }
+
+  /**
+   * 成功率聚合(仅统计已标注 session)。
+   * groupBy: source | cwd | taskType | week(周趋势,ISO 周)。
+   */
+  successStats(groupBy: 'source' | 'cwd' | 'taskType' | 'week'): Array<{
+    key: string;
+    total: number;
+    pass: number;
+    partial: number;
+    fail: number;
+  }> {
+    const keyExpr =
+      groupBy === 'source'
+        ? 'source'
+        : groupBy === 'cwd'
+          ? `COALESCE(cwd, '(unknown)')`
+          : groupBy === 'taskType'
+            ? `COALESCE(task_type, '(unlabeled)')`
+            : `strftime('%Y-W%W', started_at_ms / 1000, 'unixepoch')`;
+    const rows = this.db
+      .prepare(
+        `SELECT ${keyExpr} AS k,
+                COUNT(*) AS total,
+                SUM(CASE WHEN verdict = 'pass' THEN 1 ELSE 0 END) AS pass,
+                SUM(CASE WHEN verdict = 'partial' THEN 1 ELSE 0 END) AS partial,
+                SUM(CASE WHEN verdict = 'fail' THEN 1 ELSE 0 END) AS fail
+         FROM sessions
+         WHERE verdict IS NOT NULL
+         GROUP BY k
+         ORDER BY ${groupBy === 'week' ? 'k ASC' : 'total DESC'}`,
+      )
+      .all() as Array<{ k: string; total: number; pass: number; partial: number; fail: number }>;
+    return rows.map((r) => ({
+      key: r.k,
+      total: r.total,
+      pass: r.pass,
+      partial: r.partial,
+      fail: r.fail,
+    }));
+  }
   buildStatusByIds(ids: readonly string[]): Map<string, Exclude<BuildStatus, 'none'>> {
     const map = new Map<string, Exclude<BuildStatus, 'none'>>();
     if (ids.length === 0) return map;
@@ -711,5 +797,8 @@ function rowToSession(row: Record<string, unknown>): SessionRow {
     totalCostUsd: row.total_cost_usd as number,
     errorCount: row.error_count as number,
     joinQualityStats: JSON.parse((row.join_quality_stats as string) ?? '{}') as Record<string, number>,
+    verdict: (row.verdict as SessionRow['verdict']) ?? null,
+    taskType: (row.task_type as SessionRow['taskType']) ?? null,
+    note: (row.note as string | null) ?? null,
   };
 }
