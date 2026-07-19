@@ -16,6 +16,8 @@ import type { SessionSummary, SessionsResponse } from '../lib/types.js';
 import { navigate } from '../router.jsx';
 import { SearchBox } from '../components/search-box.jsx';
 import { StatCard } from '../components/stat-card.jsx';
+import { CwdCascader } from '../components/cwd-cascader.jsx';
+import { FilterSelect } from '../components/filter-select.jsx';
 
 const LIMIT = 50;
 const SOURCE_TABS = [
@@ -26,6 +28,29 @@ const SOURCE_TABS = [
 ] as const;
 type SourceTab = (typeof SOURCE_TABS)[number]['key'];
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TIME_OPTIONS = [
+  { value: 'all', label: '全部时间' },
+  { value: '24h', label: '近 24 小时' },
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' },
+] as const;
+type TimeRange = (typeof TIME_OPTIONS)[number]['value'];
+
+const ERROR_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'error', label: '仅有错误' },
+  { value: 'clean', label: '仅无错误' },
+] as const;
+type ErrorFilter = (typeof ERROR_OPTIONS)[number]['value'];
+
+function timeRangeToFrom(range: TimeRange): number | undefined {
+  if (range === '24h') return Date.now() - DAY_MS;
+  if (range === '7d') return Date.now() - 7 * DAY_MS;
+  if (range === '30d') return Date.now() - 30 * DAY_MS;
+  return undefined;
+}
+
 export function SessionsPage() {
   const [source, setSource] = useState<SourceTab>('all');
   const [offset, setOffset] = useState(0);
@@ -33,6 +58,11 @@ export function SessionsPage() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // 过滤栏状态
+  const [cwd, setCwd] = useState<string | undefined>(undefined);
+  const [timeRange, setTimeRange] = useState<TimeRange>('all');
+  const [errorFilter, setErrorFilter] = useState<ErrorFilter>('all');
+  const [cwds, setCwds] = useState<Array<{ cwd: string; count: number }>>([]);
 
   useEffect(() => {
     let alive = true;
@@ -52,11 +82,34 @@ export function SessionsPage() {
     };
   }, []);
 
+  // cwd 级联选项跟随平台 tab
+  useEffect(() => {
+    let alive = true;
+    api
+      .cwds(source === 'all' ? undefined : source)
+      .then((d) => {
+        if (alive) setCwds(d.cwds);
+      })
+      .catch(() => {
+        if (alive) setCwds([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [source]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
     api
-      .sessions({ source: source === 'all' ? undefined : source, limit: LIMIT, offset })
+      .sessions({
+        source: source === 'all' ? undefined : source,
+        limit: LIMIT,
+        offset,
+        cwd,
+        from: timeRangeToFrom(timeRange),
+        hasError: errorFilter === 'all' ? undefined : errorFilter === 'error',
+      })
       .then((d) => {
         if (!alive) return;
         setData(d);
@@ -73,7 +126,7 @@ export function SessionsPage() {
     return () => {
       alive = false;
     };
-  }, [source, offset]);
+  }, [source, offset, cwd, timeRange, errorFilter]);
 
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
   const total = data?.total ?? 0;
@@ -154,6 +207,59 @@ export function SessionsPage() {
             </button>
           );
         })}
+      </div>
+
+      {/* 过滤栏:cwd 级联 + 时间范围 + 错误三态(服务端过滤) */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--spacing-3)',
+          flexWrap: 'wrap',
+          marginBottom: 'var(--spacing-4)',
+        }}
+      >
+        <CwdCascader
+          cwds={cwds}
+          value={cwd}
+          onChange={(path) => {
+            setCwd(path);
+            setOffset(0);
+          }}
+        />
+        <FilterSelect
+          label="时间"
+          options={TIME_OPTIONS}
+          value={timeRange}
+          onChange={(v) => {
+            setTimeRange(v);
+            setOffset(0);
+          }}
+        />
+        <FilterSelect
+          label="错误"
+          options={ERROR_OPTIONS}
+          value={errorFilter}
+          onChange={(v) => {
+            setErrorFilter(v);
+            setOffset(0);
+          }}
+        />
+        {(cwd !== undefined || timeRange !== 'all' || errorFilter !== 'all') && (
+          <button
+            type="button"
+            className="btn"
+            style={{ color: 'var(--color-fg-faint)' }}
+            onClick={() => {
+              setCwd(undefined);
+              setTimeRange('all');
+              setErrorFilter('all');
+              setOffset(0);
+            }}
+          >
+            清除过滤
+          </button>
+        )}
       </div>
 
       {/* Aggregate cards */}

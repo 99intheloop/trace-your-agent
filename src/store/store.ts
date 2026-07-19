@@ -40,6 +40,10 @@ export interface ListSessionsFilter {
   fromMs?: number;
   /** Only sessions started at/before this ms timestamp. */
   toMs?: number;
+  /** cwd equals this path or sits under it (boundary-aware prefix match). */
+  cwdPrefix?: string;
+  /** true: only sessions with errors; false: only sessions without errors. */
+  hasError?: boolean;
   orderBy?: 'started_at' | 'span_count' | 'total_tokens' | 'total_cost';
   order?: 'asc' | 'desc';
   limit?: number;
@@ -353,6 +357,18 @@ export class TraceStore {
     return row.n;
   }
 
+  /** Distinct cwd values with session counts (drives the UI cwd cascade). */
+  listCwds(source?: Source): Array<{ cwd: string; count: number }> {
+    const rows = this.db
+      .prepare(
+        `SELECT cwd, COUNT(*) AS n FROM sessions
+         WHERE cwd IS NOT NULL ${source !== undefined ? 'AND source = @source' : ''}
+         GROUP BY cwd ORDER BY n DESC, cwd ASC`,
+      )
+      .all(source !== undefined ? { source } : {}) as Array<{ cwd: string; n: number }>;
+    return rows.map((r) => ({ cwd: r.cwd, count: r.n }));
+  }
+
   /** All spans of a session, by session.id OR traceId, ordered by start time. */
   getSessionSpans(sessionIdOrTraceId: string): Span[] {
     const rows = this.db
@@ -506,7 +522,22 @@ function sessionWhere(filter: ListSessionsFilter): { where: string[]; params: Re
     where.push('started_at_ms <= @toMs');
     params.toMs = filter.toMs;
   }
+  if (filter.cwdPrefix !== undefined && filter.cwdPrefix !== '') {
+    // Exact dir or a descendant — the trailing-slash prefix prevents
+    // `/a/b` from matching `/a/bc`.
+    where.push(`(cwd = @cwdExact OR cwd LIKE @cwdPrefix ESCAPE '\\')`);
+    params.cwdExact = filter.cwdPrefix;
+    params.cwdPrefix = `${escapeLike(filter.cwdPrefix)}/%`;
+  }
+  if (filter.hasError !== undefined) {
+    where.push(filter.hasError ? 'error_count > 0' : 'error_count = 0');
+  }
   return { where, params };
+}
+
+/** Escape LIKE wildcards (`%`, `_`) and the escape char itself. */
+function escapeLike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 function spanToRow(span: Span): Record<string, unknown> {

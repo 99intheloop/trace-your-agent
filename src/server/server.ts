@@ -132,6 +132,14 @@ function parseSourceParam(raw: string | undefined): { source?: Source; error?: s
   return { error: `source must be one of ${VALID_SOURCES.join('|')}` };
 }
 
+/** Parse an optional boolean query param ('1'/'true' → true, '0'/'false' → false). */
+function parseBoolParam(raw: string | undefined, name: string): boolean | string | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  if (raw === '1' || raw === 'true') return true;
+  if (raw === '0' || raw === 'false') return false;
+  return `${name} must be 1|true|0|false`;
+}
+
 /** Build a snippet from the first field the query matches in (name/inputSummary/outputSummary). */
 function makeSnippet(span: Span, query: string): string {
   const token = query.match(/[\p{L}\p{N}_.-]+/u)?.[0];
@@ -191,15 +199,31 @@ export function createApp(deps: ServerDeps): Hono {
     if (typeof offset === 'string') return c.json({ error: offset }, 400);
 
     const q = c.req.query('q');
+    const cwd = c.req.query('cwd');
+    const from = parseIntParam(c.req.query('from'), 'from', 0, 0);
+    if (typeof from === 'string') return c.json({ error: from }, 400);
+    const hasErrorRes = parseBoolParam(c.req.query('hasError'), 'hasError');
+    if (typeof hasErrorRes === 'string') return c.json({ error: hasErrorRes }, 400);
     const filter: ListSessionsFilter = {
       ...(sourceRes.source !== undefined ? { source: sourceRes.source } : {}),
       ...(q !== undefined && q !== '' ? { q } : {}),
+      ...(cwd !== undefined && cwd !== '' ? { cwdPrefix: cwd } : {}),
+      ...(from > 0 ? { fromMs: from } : {}),
+      ...(hasErrorRes !== undefined ? { hasError: hasErrorRes } : {}),
       limit,
       offset,
     };
     const sessions = store.listSessions(filter).map(toSessionSummary);
     const total = store.countSessions(filter);
     return c.json({ sessions, total });
+  });
+
+  /** Distinct cwd values with counts, optionally scoped to a source (cwd cascade). */
+  app.get('/api/cwds', (c) => {
+    const sourceRes = parseSourceParam(c.req.query('source'));
+    if (sourceRes.error !== undefined) return c.json({ error: sourceRes.error }, 400);
+    const cwds = store.listCwds(sourceRes.source);
+    return c.json({ cwds });
   });
 
   /** Per-source session counts (drives the UI filter tabs). */

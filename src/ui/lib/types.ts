@@ -69,6 +69,10 @@ export interface SourcesResponse {
   total: number;
 }
 
+export interface CwdsResponse {
+  cwds: Array<{ cwd: string; count: number }>;
+}
+
 // ─── Type-safe attribute accessors (ported from trace-ui/lib/types.ts) ─────
 
 /** Read a string attribute; returns undefined for missing/non-string values. */

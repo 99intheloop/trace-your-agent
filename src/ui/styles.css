@@ -123,6 +123,22 @@ body {
 .tab:hover { color: var(--color-fg-default); }
 .tab-active { color: var(--color-fg-strong); border-bottom-color: var(--color-accent); }
 
+/* Cascade / filter dropdown items */
+.cascade-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-fg-default);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cascade-item:hover { background: var(--color-bg-card, #1a1d27); }
+.cascade-active { color: var(--color-accent); }
+
 /* Sessions table */
 .tbl { border-collapse: collapse; width: 100%; }
 .tbl th {

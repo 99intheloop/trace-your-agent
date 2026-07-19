@@ -5,9 +5,13 @@ Base:`http://127.0.0.1:<port>`(默认 4777)。全部 JSON。错误:`{ "error": "
 ## REST
 
 - `GET /api/health` → `{ ok: true }`
-- `GET /api/sessions?source=&q=&limit=&offset=`
+- `GET /api/sessions?source=&q=&limit=&offset=&cwd=&from=&hasError=`
   - `source` ∈ `claude-code|codex|kimi-code`(可选);`q` 对 cwd/sessionId 子串过滤(可选);`limit` 默认 50,`offset` 默认 0
+  - `cwd`(可选):路径前缀过滤——匹配该目录本身或其子目录(boundary-aware)
+  - `from`(可选):epoch ms,只返回开始时间 ≥ 该值的 session
+  - `hasError`(可选):`1|true` 只看有错误,`0|false` 只看无错误
   - → `{ sessions: SessionSummary[], total: number }`
+- `GET /api/cwds?source=` → `{ cwds: Array<{ cwd: string; count: number }> }`(distinct cwd + 计数,按计数降序,驱动级联选择器)
 - `GET /api/sessions/:sessionId` → `SessionSummary`(404 若不存在)
 - `GET /api/sources` → `{ sources: Array<{ source: string; count: number }>, total: number }`(各平台 session 计数,驱动 UI 过滤 tab)
 - `GET /api/sessions/:sessionId/spans` → `{ spans: Span[], links: Link[] }`(span 含 `parentSpanId`;前端自行组树)

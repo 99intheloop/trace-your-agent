@@ -3,6 +3,7 @@
  * Base URL is same-origin; vite dev proxies /api → http://127.0.0.1:4777.
  */
 import type {
+  CwdsResponse,
   SearchResponse,
   SessionSummary,
   SessionsResponse,
@@ -41,9 +42,25 @@ function qs(params: Record<string, string | number | undefined>): string {
 }
 
 export const api = {
-  sessions(opts: { source?: string | undefined; limit?: number; offset?: number } = {}) {
+  sessions(
+    opts: {
+      source?: string | undefined;
+      limit?: number;
+      offset?: number;
+      cwd?: string | undefined;
+      from?: number | undefined;
+      hasError?: boolean | undefined;
+    } = {},
+  ) {
     return getJson<SessionsResponse>(
-      `/api/sessions${qs({ source: opts.source, limit: opts.limit, offset: opts.offset })}`,
+      `/api/sessions${qs({
+        source: opts.source,
+        limit: opts.limit,
+        offset: opts.offset,
+        cwd: opts.cwd,
+        from: opts.from,
+        hasError: opts.hasError === undefined ? undefined : opts.hasError ? '1' : '0',
+      })}`,
     );
   },
   session(sessionId: string) {
@@ -62,5 +79,8 @@ export const api = {
   },
   sources() {
     return getJson<SourcesResponse>('/api/sources');
+  },
+  cwds(source?: string | undefined) {
+    return getJson<CwdsResponse>(`/api/cwds${qs({ source })}`);
   },
 };
