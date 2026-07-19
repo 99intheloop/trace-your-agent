@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { ATTR, type Link, type Source, type Span, type SpanEvent, type SpanKind } from '../core/types.js';
+import { buildCommandSql, reduceBuildStatus, type BuildStatus } from './build-status.js';
 import { estimateCostUsd } from './pricing.js';
 import { SCHEMA_SQL } from './schema.js';
 
@@ -46,6 +47,8 @@ export interface ListSessionsFilter {
   hasError?: boolean;
   /** Full-text query over spans — only sessions containing a hit span. */
   spanQ?: string;
+  /** 派生的构建/测试信号(查询时计算,不落库):pass / fail / none。 */
+  buildStatus?: 'pass' | 'fail' | 'none';
   orderBy?: 'started_at' | 'span_count' | 'total_tokens' | 'total_cost';
   order?: 'asc' | 'desc';
   limit?: number;
@@ -392,6 +395,34 @@ export class TraceStore {
     return map;
   }
 
+  /**
+   * 派生每个 session 的构建/测试状态(捷径版:命令模式 + 现有 span 状态)。
+   * 返回 Map<sessionId, 'pass'|'fail'>;不在 Map 里的 session 即 'none'。
+   */
+  buildStatusByIds(ids: readonly string[]): Map<string, Exclude<BuildStatus, 'none'>> {
+    const map = new Map<string, Exclude<BuildStatus, 'none'>>();
+    if (ids.length === 0) return map;
+    const cmd = buildCommandSql();
+    const holders = ids.map((_, i) => `@bs_id${i}`).join(',');
+    const rows = this.db
+      .prepare(
+        `SELECT session_id AS sid,
+                COUNT(*) AS n,
+                SUM(CASE WHEN status_code = 'error' THEN 1 ELSE 0 END) AS fails
+         FROM spans
+         WHERE kind = 'TOOL_CALL' AND ${cmd.where} AND session_id IN (${holders})
+         GROUP BY session_id`,
+      )
+      .all({
+        ...cmd.params,
+        ...Object.fromEntries(ids.map((id, i) => [`bs_id${i}`, id])),
+      }) as Array<{ sid: string; n: number; fails: number }>;
+    for (const r of rows) {
+      map.set(r.sid, reduceBuildStatus(r.n, r.fails) as Exclude<BuildStatus, 'none'>);
+    }
+    return map;
+  }
+
   /** All spans of a session, by session.id OR traceId, ordered by start time. */
   getSessionSpans(sessionIdOrTraceId: string): Span[] {
     const rows = this.db
@@ -569,6 +600,26 @@ function sessionWhere(filter: ListSessionsFilter): { where: string[]; params: Re
         )`,
       );
       params.spanQ = ftsQuery;
+    }
+  }
+  if (filter.buildStatus !== undefined) {
+    const cmd = buildCommandSql();
+    Object.assign(params, cmd.params);
+    if (filter.buildStatus === 'none') {
+      where.push(
+        `session_id NOT IN (SELECT session_id FROM spans WHERE kind = 'TOOL_CALL' AND ${cmd.where})`,
+      );
+    } else {
+      const having =
+        filter.buildStatus === 'fail'
+          ? `SUM(CASE WHEN status_code = 'error' THEN 1 ELSE 0 END) > 0`
+          : `SUM(CASE WHEN status_code = 'error' THEN 1 ELSE 0 END) = 0`;
+      where.push(
+        `session_id IN (
+          SELECT session_id FROM spans WHERE kind = 'TOOL_CALL' AND ${cmd.where}
+          GROUP BY session_id HAVING ${having}
+        )`,
+      );
     }
   }
   return { where, params };

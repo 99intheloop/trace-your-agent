@@ -245,7 +245,7 @@ export function SessionDetailPage({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+            gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
             gap: 'var(--spacing-3)',
           }}
         >
@@ -266,6 +266,24 @@ export function SessionDetailPage({
             value={String(summary?.errorCount ?? stats.errors)}
             accent={
               (summary?.errorCount ?? stats.errors) > 0 ? 'var(--color-status-error)' : undefined
+            }
+          />
+          <StatCard
+            label="Build"
+            value={
+              summary?.buildStatus === 'pass'
+                ? '✓ 通过'
+                : summary?.buildStatus === 'fail'
+                  ? '✗ 失败'
+                  : '— 未运行'
+            }
+            sub="检测到测试/构建命令"
+            tone={
+              summary?.buildStatus === 'pass'
+                ? 'var(--color-status-ok)'
+                : summary?.buildStatus === 'fail'
+                  ? 'var(--color-status-error)'
+                  : undefined
             }
           />
         </div>

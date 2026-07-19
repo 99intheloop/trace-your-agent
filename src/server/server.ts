@@ -37,6 +37,8 @@ interface SessionSummary {
   joinQualityStats: Record<string, number>;
   /** spanQ 过滤时:该 session 的 FTS 命中 span 数。 */
   spanHits?: number;
+  /** 派生的构建/测试状态(命令模式 + span 状态,查询时计算)。 */
+  buildStatus?: 'pass' | 'fail' | 'none';
 }
 
 /** SearchHit per docs/api.md. */
@@ -149,6 +151,13 @@ function parseBoolParam(raw: string | undefined, name: string): boolean | string
   return `${name} must be 1|true|0|false`;
 }
 
+/** Parse the optional `build` query param. */
+function parseBuildParam(raw: string | undefined): { build?: 'pass' | 'fail' | 'none'; error?: string } {
+  if (raw === undefined || raw === '') return {};
+  if (raw === 'pass' || raw === 'fail' || raw === 'none') return { build: raw };
+  return { error: 'build must be pass|fail|none' };
+}
+
 /** Build a snippet from the first field the query matches in (name/inputSummary/outputSummary). */
 function makeSnippet(span: Span, query: string): string {
   const token = query.match(/[\p{L}\p{N}_.-]+/u)?.[0];
@@ -231,6 +240,8 @@ export function createApp(deps: ServerDeps): Hono {
     const hasErrorRes = parseBoolParam(c.req.query('hasError'), 'hasError');
     if (typeof hasErrorRes === 'string') return c.json({ error: hasErrorRes }, 400);
     const spanQ = c.req.query('spanQ');
+    const buildRes = parseBuildParam(c.req.query('build'));
+    if (buildRes.error !== undefined) return c.json({ error: buildRes.error }, 400);
     const filter: ListSessionsFilter = {
       ...(sourceRes.source !== undefined ? { source: sourceRes.source } : {}),
       ...(q !== undefined && q !== '' ? { q } : {}),
@@ -238,6 +249,7 @@ export function createApp(deps: ServerDeps): Hono {
       ...(from > 0 ? { fromMs: from } : {}),
       ...(hasErrorRes !== undefined ? { hasError: hasErrorRes } : {}),
       ...(spanQ !== undefined && spanQ.trim() !== '' ? { spanQ } : {}),
+      ...(buildRes.build !== undefined ? { buildStatus: buildRes.build } : {}),
       limit,
       offset,
     };
@@ -250,6 +262,11 @@ export function createApp(deps: ServerDeps): Hono {
         const n = hits.get(s.sessionId);
         if (n !== undefined) s.spanHits = n;
       }
+    }
+    // 附每 session 的构建/测试派生状态
+    const buildMap = store.buildStatusByIds(sessions.map((s) => s.sessionId));
+    for (const s of sessions) {
+      s.buildStatus = buildMap.get(s.sessionId) ?? 'none';
     }
     return c.json({ sessions, total });
   });
@@ -274,7 +291,9 @@ export function createApp(deps: ServerDeps): Hono {
   app.get('/api/sessions/:sessionId', (c) => {
     const row = store.getSessionRow(c.req.param('sessionId'));
     if (row === undefined) return c.json({ error: 'session not found' }, 404);
-    return c.json(toSessionSummary(row));
+    const summary = toSessionSummary(row);
+    summary.buildStatus = store.buildStatusByIds([summary.sessionId]).get(summary.sessionId) ?? 'none';
+    return c.json(summary);
   });
 
   app.get('/api/sessions/:sessionId/spans', (c) => {

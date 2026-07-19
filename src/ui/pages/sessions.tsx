@@ -44,6 +44,14 @@ const ERROR_OPTIONS = [
 ] as const;
 type ErrorFilter = (typeof ERROR_OPTIONS)[number]['value'];
 
+const BUILD_OPTIONS = [
+  { value: 'all', label: '全部' },
+  { value: 'pass', label: '通过' },
+  { value: 'fail', label: '失败' },
+  { value: 'none', label: '未运行' },
+] as const;
+type BuildFilter = (typeof BUILD_OPTIONS)[number]['value'];
+
 function timeRangeToFrom(range: TimeRange): number | undefined {
   if (range === '24h') return Date.now() - DAY_MS;
   if (range === '7d') return Date.now() - 7 * DAY_MS;
@@ -61,6 +69,7 @@ interface PageState {
   cwd: string | undefined;
   time: TimeRange;
   error: ErrorFilter;
+  build: BuildFilter;
   spanQ: string;
   offset: number;
 }
@@ -70,12 +79,14 @@ function readUrlState(): PageState {
   const rawSource = p.get('source') ?? 'all';
   const rawTime = p.get('time') ?? 'all';
   const rawError = p.get('error') ?? 'all';
+  const rawBuild = p.get('build') ?? 'all';
   const rawOffset = Number(p.get('offset') ?? '0');
   return {
     source: (SOURCE_KEYS.includes(rawSource) ? rawSource : 'all') as SourceTab,
     cwd: p.get('cwd') ?? undefined,
     time: (TIME_OPTIONS.some((o) => o.value === rawTime) ? rawTime : 'all') as TimeRange,
     error: (ERROR_OPTIONS.some((o) => o.value === rawError) ? rawError : 'all') as ErrorFilter,
+    build: (BUILD_OPTIONS.some((o) => o.value === rawBuild) ? rawBuild : 'all') as BuildFilter,
     spanQ: p.get('spanQ') ?? '',
     offset: Number.isInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0,
   };
@@ -87,6 +98,7 @@ function writeUrlState(s: PageState): void {
   if (s.cwd !== undefined) p.set('cwd', s.cwd);
   if (s.time !== 'all') p.set('time', s.time);
   if (s.error !== 'all') p.set('error', s.error);
+  if (s.build !== 'all') p.set('build', s.build);
   if (s.spanQ !== '') p.set('spanQ', s.spanQ);
   if (s.offset > 0) p.set('offset', String(s.offset));
   const qs = p.toString();
@@ -111,6 +123,7 @@ export function SessionsPage() {
   const [cwd, setCwd] = useState<string | undefined>(initial.cwd);
   const [timeRange, setTimeRange] = useState<TimeRange>(initial.time);
   const [errorFilter, setErrorFilter] = useState<ErrorFilter>(initial.error);
+  const [buildFilter, setBuildFilter] = useState<BuildFilter>(initial.build);
   const [spanQ, setSpanQ] = useState(initial.spanQ);
   const [cwds, setCwds] = useState<Array<{ cwd: string; count: number }>>([]);
 
@@ -160,6 +173,7 @@ export function SessionsPage() {
         from: timeRangeToFrom(timeRange),
         hasError: errorFilter === 'all' ? undefined : errorFilter === 'error',
         spanQ: spanQ === '' ? undefined : spanQ,
+        build: buildFilter === 'all' ? undefined : buildFilter,
       })
       .then((d) => {
         if (!alive) return;
@@ -177,12 +191,12 @@ export function SessionsPage() {
     return () => {
       alive = false;
     };
-  }, [source, offset, cwd, timeRange, errorFilter, spanQ]);
+  }, [source, offset, cwd, timeRange, errorFilter, buildFilter, spanQ]);
 
   // URL 同步(replaceState):detail 返回 / 分享链接时状态不丢
   useEffect(() => {
-    writeUrlState({ source, cwd, time: timeRange, error: errorFilter, spanQ, offset });
-  }, [source, cwd, timeRange, errorFilter, spanQ, offset]);
+    writeUrlState({ source, cwd, time: timeRange, error: errorFilter, build: buildFilter, spanQ, offset });
+  }, [source, cwd, timeRange, errorFilter, buildFilter, spanQ, offset]);
 
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
   const total = data?.total ?? 0;
@@ -307,6 +321,15 @@ export function SessionsPage() {
             setOffset(0);
           }}
         />
+        <FilterSelect
+          label="构建"
+          options={BUILD_OPTIONS}
+          value={buildFilter}
+          onChange={(v) => {
+            setBuildFilter(v);
+            setOffset(0);
+          }}
+        />
         {spanQ !== '' ? (
           <span
             className="btn"
@@ -327,7 +350,7 @@ export function SessionsPage() {
             </span>
           </span>
         ) : null}
-        {(cwd !== undefined || timeRange !== 'all' || errorFilter !== 'all' || spanQ !== '') && (
+        {(cwd !== undefined || timeRange !== 'all' || errorFilter !== 'all' || buildFilter !== 'all' || spanQ !== '') && (
           <button
             type="button"
             className="btn"
@@ -336,6 +359,7 @@ export function SessionsPage() {
               setCwd(undefined);
               setTimeRange('all');
               setErrorFilter('all');
+              setBuildFilter('all');
               setSpanQ('');
               setOffset(0);
             }}
@@ -482,6 +506,26 @@ function SessionRow({ s }: { s: SessionSummary }) {
             }}
           >
             {s.spanHits} 命中
+          </span>
+        ) : null}
+        {s.buildStatus === 'pass' || s.buildStatus === 'fail' ? (
+          <span
+            title={s.buildStatus === 'pass' ? '检测到测试/构建命令:通过' : '检测到测试/构建命令:失败'}
+            style={{
+              marginLeft: 6,
+              fontSize: 10,
+              fontFamily: 'var(--font-mono)',
+              padding: '1px 6px',
+              borderRadius: 8,
+              background:
+                s.buildStatus === 'pass'
+                  ? 'color-mix(in srgb, var(--color-status-ok) 16%, transparent)'
+                  : 'color-mix(in srgb, var(--color-status-error) 16%, transparent)',
+              color:
+                s.buildStatus === 'pass' ? 'var(--color-status-ok)' : 'var(--color-status-error)',
+            }}
+          >
+            {s.buildStatus === 'pass' ? '✓ 构建' : '✗ 构建'}
           </span>
         ) : null}
       </td>

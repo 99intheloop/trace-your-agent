@@ -51,6 +51,7 @@ export const api = {
       from?: number | undefined;
       hasError?: boolean | undefined;
       spanQ?: string | undefined;
+      build?: 'pass' | 'fail' | 'none' | undefined;
     } = {},
   ) {
     return getJson<SessionsResponse>(
@@ -62,6 +63,7 @@ export const api = {
         from: opts.from,
         hasError: opts.hasError === undefined ? undefined : opts.hasError ? '1' : '0',
         spanQ: opts.spanQ,
+        build: opts.build,
       })}`,
     );
   },

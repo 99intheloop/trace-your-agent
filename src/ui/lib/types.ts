@@ -39,6 +39,8 @@ export interface SessionSummary {
   joinQualityStats: Record<string, number>;
   /** spanQ 过滤时:该 session 的 FTS 命中 span 数。 */
   spanHits?: number;
+  /** 派生的构建/测试状态。 */
+  buildStatus?: 'pass' | 'fail' | 'none';
 }
 
 /** GET /api/search hit (docs/api.md). */

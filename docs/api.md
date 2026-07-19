@@ -10,8 +10,9 @@ Base:`http://127.0.0.1:<port>`(默认 4777)。全部 JSON。错误:`{ "error": "
   - `cwd`(可选):路径前缀过滤——匹配该目录本身或其子目录(boundary-aware)
   - `from`(可选):epoch ms,只返回开始时间 ≥ 该值的 session
   - `hasError`(可选):`1|true` 只看有错误,`0|false` 只看无错误
+  - `build`(可选):`pass|fail|none` 按派生构建/测试状态过滤(命令模式 + span 状态,查询时从 spans 派生,不落库)
   - `spanQ`(可选):span 全文过滤——只返回包含命中 span 的 session(FTS 联查,分页正确);命中时每个 SessionSummary 附 `spanHits`(命中 span 数)
-  - → `{ sessions: SessionSummary[], total: number }`
+  - → `{ sessions: SessionSummary[], total: number }`;每个 SessionSummary 附 `buildStatus`
 - `GET /api/cwds?source=` → `{ cwds: Array<{ cwd: string; count: number }> }`(distinct cwd + 计数,按计数降序,驱动级联选择器)
 - `GET /api/sessions/:sessionId` → `SessionSummary`(404 若不存在)
 - `GET /api/sources` → `{ sources: Array<{ source: string; count: number }>, total: number }`(各平台 session 计数,驱动 UI 过滤 tab)
