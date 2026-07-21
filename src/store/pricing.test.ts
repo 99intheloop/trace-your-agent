@@ -14,6 +14,11 @@ describe('pricing', () => {
     expect(lookupPricing('some-local-model')).toBeUndefined();
   });
 
+  it('matches glm prefix', () => {
+    expect(lookupPricing('glm-5.2')?.inputPer1M).toBe(0.83);
+    expect(lookupPricing('GLM-4.6')?.outputPer1M).toBe(3.70);
+  });
+
   it('estimates cost incl. cache rates', () => {
     const cost = estimateCostUsd(
       { inputTokens: 1_000_000, outputTokens: 100_000, cacheReadTokens: 2_000_000 },

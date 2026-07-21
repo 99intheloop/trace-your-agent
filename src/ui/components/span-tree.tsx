@@ -28,6 +28,8 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import {
+  ATTR,
+  attrString,
   isApprox,
   isDetached,
   isHeuristicJoin,
@@ -36,7 +38,8 @@ import {
 } from '../lib/types.js';
 import type { Span } from '../lib/types.js';
 import { kindColorHex, theme } from '../lib/colors.js';
-import { fmtMs, fmtTokens } from '../lib/format.js';
+import { fmtCost, fmtMs, fmtTokens } from '../lib/format.js';
+import { estimateCostUsd } from '../../store/pricing.js';
 
 interface SpanTreeProps {
   spans: Span[];
@@ -82,6 +85,30 @@ function buildTreeIndex(spans: readonly Span[]): {
   return { roots, childrenBy };
 }
 
+/**
+ * 每个节点的子树 cost 汇总(含自身)。只有当子树内存在可计价的 LLM_CALL
+ * 时才会有值;全空(模型未登记 / 无 token)则不入 map,行上不渲染。
+ */
+function computeSubtreeCosts(
+  roots: readonly Span[],
+  childrenBy: ReadonlyMap<string, Span[]>,
+): ReadonlyMap<string, number> {
+  const costs = new Map<string, number>();
+  const visit = (span: Span): number => {
+    let sum = 0;
+    const model = attrString(span, ATTR.GEN_AI_MODEL);
+    if (span.tokenUsage !== undefined && model !== undefined) {
+      const c = estimateCostUsd(span.tokenUsage, model);
+      if (c !== undefined) sum += c;
+    }
+    for (const k of childrenBy.get(span.spanId) ?? []) sum += visit(k);
+    if (sum > 0) costs.set(span.spanId, sum);
+    return sum;
+  };
+  for (const r of roots) visit(r);
+  return costs;
+}
+
 export function SpanTree({
   spans,
   selectedSpanId,
@@ -92,6 +119,10 @@ export function SpanTree({
   forceExpandedIds,
 }: SpanTreeProps) {
   const { roots, childrenBy } = useMemo(() => buildTreeIndex(spans), [spans]);
+  const subtreeCosts = useMemo(
+    () => computeSubtreeCosts(roots, childrenBy),
+    [roots, childrenBy],
+  );
   // 大 session:turn 级默认收起,DOM 从 N 降到 turn 数;小 session 全展开
   const collapseToTurn = spans.length > COLLAPSE_TO_TURN_THRESHOLD;
 
@@ -105,6 +136,7 @@ export function SpanTree({
           key={r.spanId}
           span={r}
           childrenBy={childrenBy}
+          subtreeCosts={subtreeCosts}
           depth={0}
           selectedSpanId={selectedSpanId}
           flashSpanId={flashSpanId}
@@ -122,6 +154,7 @@ export function SpanTree({
 interface TreeNodeProps {
   span: Span;
   childrenBy: ReadonlyMap<string, Span[]>;
+  subtreeCosts: ReadonlyMap<string, number>;
   depth: number;
   selectedSpanId: string | null;
   flashSpanId: string | null;
@@ -136,6 +169,7 @@ interface TreeNodeProps {
 function TreeNode({
   span,
   childrenBy,
+  subtreeCosts,
   depth,
   selectedSpanId,
   flashSpanId,
@@ -171,6 +205,7 @@ function TreeNode({
         onSelectSpan={onSelectSpan}
         maxDurationMs={maxDurationMs}
         linked={linkedIds.has(span.spanId)}
+        subtreeCost={subtreeCosts.get(span.spanId)}
       />
       {hasChildren && isOpen
         ? kids.map((c) => (
@@ -178,6 +213,7 @@ function TreeNode({
               key={c.spanId}
               span={c}
               childrenBy={childrenBy}
+              subtreeCosts={subtreeCosts}
               depth={depth + 1}
               selectedSpanId={selectedSpanId}
               flashSpanId={flashSpanId}
@@ -204,6 +240,8 @@ interface SpanRowProps {
   onSelectSpan: (spanId: string) => void;
   maxDurationMs: number;
   linked: boolean;
+  /** 子树(含自身)的 cost 汇总;仅 AGENT_TURN 行渲染。 */
+  subtreeCost?: number;
 }
 
 /** 叶子:真实的行 DOM。memo 后一次点击只有新旧两行重渲染。 */
@@ -218,6 +256,7 @@ const SpanRow = memo(function SpanRow({
   onSelectSpan,
   maxDurationMs,
   linked,
+  subtreeCost,
 }: SpanRowProps) {
   const isError = span.status.code === 'error';
   const color = kindColorHex(span.kind);
@@ -367,6 +406,18 @@ const SpanRow = memo(function SpanRow({
           }}
         >
           ↑{fmtTokens(span.tokenUsage.inputTokens)} ↓{fmtTokens(span.tokenUsage.outputTokens)}
+        </span>
+      ) : null}
+      {span.kind === 'AGENT_TURN' && subtreeCost !== undefined ? (
+        <span
+          style={{
+            fontSize: '10px',
+            color: 'var(--color-fg-faint)',
+            fontFamily: 'var(--font-mono)',
+            flexShrink: 0,
+          }}
+        >
+          {fmtCost(subtreeCost)}
         </span>
       ) : null}
       {span.kind === 'TOOL_CALL' ? (

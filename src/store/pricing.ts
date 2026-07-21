@@ -57,6 +57,9 @@ export const PRICING_TABLE: ReadonlyArray<readonly [prefix: string, pricing: Mod
   ['moonshot-v1-128k', { inputPer1M: 8.45, outputPer1M: 8.45 }],
   ['moonshot-v1-32k', { inputPer1M: 3.38, outputPer1M: 3.38 }],
   ['moonshot-v1-8k', { inputPer1M: 1.69, outputPer1M: 1.69 }],
+  // Zhipu GLM (glm-4.5 / glm-4.6 / glm-5.x). List prices are in CNY; converted
+  // at ≈7.1 CNY/USD. Range per official pricing pages; midpoint used.
+  ['glm', { inputPer1M: 0.83, outputPer1M: 3.70, cacheReadPer1M: 0.17 }],
 ] as const;
 
 /** Longest-prefix, case-insensitive lookup; `undefined` when the model is unknown. */

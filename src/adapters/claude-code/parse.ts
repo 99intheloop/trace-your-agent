@@ -306,7 +306,7 @@ export async function* parseSession(options: ParseOptions): AsyncIterable<RawEve
       for (const b of msg.blocks) {
         if (b.type !== 'tool_use' || b.id === undefined) continue;
         mainToolUseIds.add(b.id);
-        if (b.name === 'Task') {
+        if (b.name === 'Task' || b.name === 'Agent') {
           const input = b.input !== null && typeof b.input === 'object' ? (b.input as Record<string, unknown>) : undefined;
           const prompt = input !== undefined ? str(input['prompt']) : undefined;
           const task: TaskToolUse = { toolUseId: b.id, tsMs: r.tsMs };

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DetectedHome, SessionRef } from '../../core/source.js';
 import { ClaudeCodeAdapter } from './adapter.js';
 import {
+  AGENT_TOOL_SESSION,
   JOIN_SESSION,
   materializeHome,
   ORPHAN_SESSION,
@@ -39,7 +40,7 @@ describe('ClaudeCodeAdapter.detect', () => {
     expect(detected!.source).toBe('claude-code');
     expect(detected!.homeDir).toBe(home.claudeHome);
     expect(detected!.readable).toBe(true);
-    expect(detected!.sessionCount).toBe(6);
+    expect(detected!.sessionCount).toBe(7);
     expect(detected!.version).toBe('2.1.0');
   });
 });
@@ -55,7 +56,7 @@ describe('ClaudeCodeAdapter.discover', () => {
 
   it('enumerates main session files only (sidechains never become sessions)', () => {
     const ids = sessions.map((s) => s.sessionId).sort();
-    expect(ids).toEqual(['sess-int', JOIN_SESSION, ORPHAN_SESSION, 'sess-simple', SUB_SESSION, 'sess-tools'].sort());
+    expect(ids).toEqual([AGENT_TOOL_SESSION, 'sess-int', JOIN_SESSION, ORPHAN_SESSION, 'sess-simple', SUB_SESSION, 'sess-tools'].sort());
     expect(sessions.every((s) => !s.filePath.includes('agent-'))).toBe(true);
   });
 

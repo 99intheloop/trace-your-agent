@@ -181,6 +181,31 @@ export const SUB_SIDECHAIN =
   });
 export const SUB_META = JSON.stringify({ agentType: 'Explore', description: 'Explore codebase' }, null, 2);
 
+/** Fixture 3b: same as 3 but the subagent is spawned via the `Agent` tool (newer CC). */
+export const AGENT_TOOL_SESSION = 'sess-agenttool';
+export const AGENT_TOOL_AGENT_ID = 'ddeeff';
+export const AGENT_TOOL_PROMPT = 'audit the adapters';
+export const AGENT_TOOL_MAIN =
+  userPrompt('at-u1', AGENT_TOOL_SESSION, 'Audit the codebase', 0) +
+  assistantRow(
+    'at-a1',
+    AGENT_TOOL_SESSION,
+    [toolUseBlock('toolu_at1', 'Agent', { description: 'audit', prompt: AGENT_TOOL_PROMPT, subagent_type: 'general-purpose' })],
+    1000,
+    USAGE_PLAIN,
+  ) +
+  toolResultRow('at-u2', AGENT_TOOL_SESSION, 'toolu_at1', 'audited 3 adapters', 6000) +
+  assistantRow('at-a2', AGENT_TOOL_SESSION, [textBlock('Done.')], 7000, USAGE_PLAIN_2) +
+  turnDurationRow('at-sys1', AGENT_TOOL_SESSION, 7500, 4, 8000);
+export const AGENT_TOOL_SIDECHAIN =
+  userPrompt('at-sc-u1', AGENT_TOOL_SESSION, AGENT_TOOL_PROMPT, 2000, { isSidechain: true, agentId: AGENT_TOOL_AGENT_ID }) +
+  assistantRow('at-sc-a1', AGENT_TOOL_SESSION, [textBlock('Checking.')], 3000, USAGE_PLAIN, { isSidechain: true, agentId: AGENT_TOOL_AGENT_ID }) +
+  assistantRow('at-sc-a2', AGENT_TOOL_SESSION, [textBlock('Found 3 adapters.')], 5000, USAGE_PLAIN_2, {
+    isSidechain: true,
+    agentId: AGENT_TOOL_AGENT_ID,
+  });
+export const AGENT_TOOL_META = JSON.stringify({ agentType: 'general-purpose', description: 'audit adapters' }, null, 2);
+
 /** Fixture 4: interrupted session (turn + tool call never close). */
 export const INT_SESSION = 'sess-int';
 export const INT_MAIN =
@@ -244,6 +269,9 @@ export function materializeHome(root: string): FakeHome {
   write(claudeHome, join(proj, `${SUB_SESSION}.jsonl`), SUB_MAIN);
   write(claudeHome, join(proj, SUB_SESSION, 'subagents', `agent-${SUB_AGENT_ID}.jsonl`), SUB_SIDECHAIN);
   write(claudeHome, join(proj, SUB_SESSION, 'subagents', `agent-${SUB_AGENT_ID}.meta.json`), SUB_META);
+  write(claudeHome, join(proj, `${AGENT_TOOL_SESSION}.jsonl`), AGENT_TOOL_MAIN);
+  write(claudeHome, join(proj, AGENT_TOOL_SESSION, 'subagents', `agent-${AGENT_TOOL_AGENT_ID}.jsonl`), AGENT_TOOL_SIDECHAIN);
+  write(claudeHome, join(proj, AGENT_TOOL_SESSION, 'subagents', `agent-${AGENT_TOOL_AGENT_ID}.meta.json`), AGENT_TOOL_META);
   write(claudeHome, join(proj, `${INT_SESSION}.jsonl`), INT_MAIN);
   write(claudeHome, join(proj, `${JOIN_SESSION}.jsonl`), JOIN_MAIN);
   write(claudeHome, join(proj, JOIN_SESSION, 'subagents', `agent-${JOIN_AGENT_ID}.jsonl`), JOIN_SIDECHAIN);

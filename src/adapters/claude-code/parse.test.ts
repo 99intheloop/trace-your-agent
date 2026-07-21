@@ -9,6 +9,8 @@ import { TraceStore } from '../../store/store.js';
 import { ATTR, type Span } from '../../core/types.js';
 import { ClaudeCodeAdapter } from './adapter.js';
 import {
+  AGENT_TOOL_AGENT_ID,
+  AGENT_TOOL_SESSION,
   INT_SESSION,
   JOIN_AGENT_ID,
   JOIN_SESSION,
@@ -224,6 +226,25 @@ describe('parse: subagent sidechain (heuristic join)', () => {
       store.insertSpans(again.spans);
       expect(store.getStats(SUB_SESSION).spanCount).toBe(10);
     });
+  });
+});
+
+describe('parse: subagent spawned via Agent tool (heuristic join)', () => {
+  let result: HarnessResult;
+  beforeAll(async () => {
+    result = await run(AGENT_TOOL_SESSION);
+  });
+
+  it('wires the sidechain root under the Agent tool_use span', () => {
+    const agent = one(result.spans, (s) => s.toolName === 'Agent', 'agent tool span');
+    const sideTurn = one(
+      result.spans,
+      (s) => s.kind === 'AGENT_TURN' && s.attributes[ATTR.AGENT_ID] === AGENT_TOOL_AGENT_ID,
+      'sidechain turn',
+    );
+    expect(sideTurn.parentSpanId).toBe(agent.spanId);
+    expect(sideTurn.attributes[ATTR.JOIN_QUALITY]).toBe('heuristic');
+    expect(sideTurn.attributes['agent.name']).toBe('general-purpose');
   });
 });
 
